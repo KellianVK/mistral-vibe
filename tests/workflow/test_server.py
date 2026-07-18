@@ -51,6 +51,9 @@ def test_state_endpoint_before_any_run_is_empty(tmp_path: Path) -> None:
         "decisions": [],
         "questions": [],
         "claims": [],
+        "messages": [],
+        "broadcasts": [],
+        "changes": [],
         "timings": {},
     }
     assert client.get("/manifest").json() == {"project": None, "roles": []}
@@ -91,3 +94,64 @@ def test_root_serves_board_ui_or_build_hint(tmp_path: Path) -> None:
     body = response.text
     # Committed board build -> the app shell; otherwise the build hint page.
     assert "MiaouFlow" in body or "root" in body
+
+
+def test_logs_endpoint_reads_role_transcript(tmp_path: Path) -> None:
+    workdir = seeded_workdir(tmp_path)
+    logs_dir = workdir / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "backend.jsonl").write_text(
+        '{"role":"system","content":"hidden"}\n'
+        '{"role":"assistant","content":"working","tool_calls":'
+        '[{"function":{"name":"claim_file"}}]}\n'
+        '{"role":"tool","content":"ok","name":"claim_file"}\n',
+        encoding="utf-8",
+    )
+    client = TestClient(server.create_app(workdir))
+
+    payload = client.get("/logs", params={"role": "Backend"}).json()
+
+    assert [e["role"] for e in payload["entries"]] == ["assistant", "tool"]
+    assert payload["entries"][0]["tools"] == ["claim_file"]
+    assert client.get("/logs").status_code == 400
+
+
+def test_system_endpoint_lists_provisioning(tmp_path: Path) -> None:
+    from vibe.workflow.roles import select_roles
+    from vibe.workflow.setup import configure_workdir
+
+    workdir = seeded_workdir(tmp_path)
+    configure_workdir(workdir, select_roles(None))
+    client = TestClient(server.create_app(workdir))
+
+    system = client.get("/system").json()
+
+    profile_names = {p["name"] for p in system["agent_profiles"]}
+    assert {"planner", "backend", "frontend"} <= profile_names
+    tool_names = {t["name"] for t in system["blackboard_tools"]}
+    assert {"publish_decision", "send_message", "read_inbox"} <= tool_names
+    assert "planner" in system["role_prompts"]
+
+
+def test_post_agent_registers_custom_role(tmp_path: Path) -> None:
+    from vibe.workflow.roles import select_roles
+
+    workdir = seeded_workdir(tmp_path)
+    client = TestClient(server.create_app(workdir))
+
+    response = client.post(
+        "/agents",
+        json={"name": "Security", "objective": "Audit auth and input validation"},
+    )
+
+    assert response.status_code == 201
+    roles = select_roles(None, workdir=workdir)
+    names = [role.name for role in roles]
+    assert "Security" in names
+    security = next(role for role in roles if role.name == "Security")
+    assert security.depends_on == ("Planner",)
+    # It shows up in the manifest for the graph.
+    manifest_names = [r["name"] for r in client.get("/manifest").json()["roles"]]
+    assert "Security" in manifest_names
+    # Validation errors are surfaced.
+    assert client.post("/agents", json={"name": ""}).status_code == 400

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -67,19 +69,84 @@ class RoleSelectionError(ValueError):
     pass
 
 
-def select_roles(names: list[str] | None = None) -> list[RoleSpec]:
+def custom_roles_path(workdir: Path) -> Path:
+    return workdir.expanduser().resolve() / ".vibe" / "custom_roles.json"
+
+
+def load_custom_roles(workdir: Path | None) -> list[RoleSpec]:
+    """User-added roles (board's Add-agent tab); they join the next run."""
+    if workdir is None:
+        return []
+    path = custom_roles_path(workdir)
+    if not path.is_file():
+        return []
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    roles: list[RoleSpec] = []
+    if not isinstance(entries, list):
+        return []
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("name"):
+            continue
+        name = str(entry["name"]).strip()
+        roles.append(
+            RoleSpec(
+                name=name,
+                agent_profile=str(entry.get("agent_profile") or name.lower()),
+                model=str(entry.get("model") or CODER_MODEL),
+                objective=str(entry.get("objective") or f"Act as the {name} agent."),
+                depends_on=tuple(entry.get("depends_on") or ("Planner",)),
+                max_turns=int(entry.get("max_turns") or 40),
+            )
+        )
+    return roles
+
+
+def save_custom_role(workdir: Path, role: RoleSpec) -> None:
+    path = custom_roles_path(workdir)
+    existing = [
+        entry
+        for entry in load_custom_roles(workdir)
+        if entry.name.lower() != role.name.lower()
+    ]
+    entries = [
+        {
+            "name": entry.name,
+            "agent_profile": entry.agent_profile,
+            "model": entry.model,
+            "objective": entry.objective,
+            "depends_on": list(entry.depends_on),
+            "max_turns": entry.max_turns,
+        }
+        for entry in [*existing, role]
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+
+
+def select_roles(
+    names: list[str] | None = None, workdir: Path | None = None
+) -> list[RoleSpec]:
     """Resolve requested role names (case-insensitive) against the manifest.
 
+    Custom roles registered in the workdir join the default active set.
     Dependencies on excluded roles are dropped so any subset stays runnable.
     """
-    wanted = [name for name in (names or list(DEFAULT_ACTIVE_ROLES))]
-    by_lower = {role.name.lower(): role for role in DEFAULT_ROLES}
+    custom = load_custom_roles(workdir)
+    manifest = [*DEFAULT_ROLES, *custom]
+    if names:
+        wanted = list(names)
+    else:
+        wanted = [*DEFAULT_ACTIVE_ROLES, *[role.name for role in custom]]
+    by_lower = {role.name.lower(): role for role in manifest}
     selected: list[RoleSpec] = []
     seen: set[str] = set()
     for name in wanted:
         role = by_lower.get(name.strip().lower())
         if role is None:
-            known = ", ".join(role.name for role in DEFAULT_ROLES)
+            known = ", ".join(role.name for role in manifest)
             raise RoleSelectionError(f"Unknown role {name!r}; known roles: {known}")
         if role.name not in seen:
             seen.add(role.name)

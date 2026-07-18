@@ -169,10 +169,18 @@ def build_worker_prompt(
 ) -> str:
     prompt_path = PROMPTS_DIR / f"{role.agent_profile}.md"
     if not prompt_path.is_file():
+        prompt_path = PROMPTS_DIR / "custom.md"
+    if not prompt_path.is_file():
         raise WorkflowRunError(f"Missing role prompt: {prompt_path}")
     template = prompt_path.read_text(encoding="utf-8")
     full_brief = f"{brief}{_decisions_digest(database_path)}" if brief else ""
-    return template.replace("{{GOAL}}", goal).replace("{{BRIEF}}", full_brief)
+    return (
+        template
+        .replace("{{GOAL}}", goal)
+        .replace("{{BRIEF}}", full_brief)
+        .replace("{{ROLE}}", role.name)
+        .replace("{{OBJECTIVE}}", role.objective)
+    )
 
 
 def build_worker_command(prompt: str, role: RoleSpec, workdir: Path) -> list[str]:
@@ -475,7 +483,7 @@ async def run_workflow(
     resolved_workdir = workdir.expanduser().resolve()
     child_environment = dict(environment if environment is not None else os.environ)
 
-    roles = select_roles(role_names)
+    roles = select_roles(role_names, workdir=resolved_workdir)
     waves = execution_waves(roles)
     try:
         configure_workdir(resolved_workdir, roles)
