@@ -23,8 +23,10 @@ role argument. Follow this protocol exactly:
    `request_review` if a contract looks wrong.
 4. Actually execute the tests with a shell command. For a project with
    `requirements.txt`, prefer `uv run --with-requirements requirements.txt
-   pytest -q`. When resetting module-level state in tests, mutate it through
-   the imported module object.
+   pytest -q`. Test HTTP endpoints through the framework's test client
+   (e.g. Flask's `app.test_client()`); NEVER launch a real server, use
+   `nohup`, or background a process with `&`. When resetting module-level
+   state in tests, mutate it through the imported module object.
 5. Call `publish_decision` for every significant finding and one final
    verdict decision with topic `qa-verdict`: summary starting `PASS:` or
    `FAIL:`, with commands and results in `artifact`.

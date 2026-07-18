@@ -341,6 +341,17 @@ async def _monitor_worker(
         await asyncio.to_thread(record_event, database_path, role, "exited")
 
     if return_code != 0:
+        current = await asyncio.to_thread(read_status, database_path, role)
+        if current is not None and current["state"] == "done":
+            # The agent finished its work and said so; the process died in
+            # teardown (e.g. a leaked child holding the event loop). The
+            # decision check in _verify_published_decision still applies.
+            print(
+                f"warning: {role} exited with code {return_code} after "
+                "reporting done; keeping done",
+                file=sys.stderr,
+            )
+            return WorkerResult(role=role, return_code=0)
         return await _blocked_worker(
             database_path,
             role,

@@ -303,6 +303,47 @@ async def test_run_worker_terminates_and_blocks_at_global_deadline(
 
 
 @pytest.mark.asyncio
+async def test_teardown_crash_after_agent_reported_done_still_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    database_path = workdir / "workflow.db"
+    initialize_database(database_path)
+    # The agent finished its work (status done) but the vibe process died in
+    # teardown with a nonzero exit — e.g. a leaked child process.
+    process = FakeProcess(
+        return_code=1,
+        stdout=b'{"role":"assistant","content":"done","tool_calls":null}\n',
+        stderr=b"RuntimeError: Event loop is closed\n",
+    )
+
+    async def fake_create_subprocess_exec(
+        *_command: str, **_options: object
+    ) -> FakeProcess:
+        update_status(database_path, "Backend", "done", "Completed")
+        return process
+
+    monkeypatch.setattr(
+        orchestrator.asyncio, "create_subprocess_exec", fake_create_subprocess_exec
+    )
+
+    result = await orchestrator.run_worker(
+        backend_role(),
+        "Implement the API",
+        "",
+        workdir,
+        database_path,
+        asyncio.get_running_loop().time() + 30,
+        environment={},
+    )
+
+    assert result.succeeded
+    status = read_status(database_path, "Backend")
+    assert status is not None and status["state"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_exit_zero_does_not_clobber_agent_reported_blocked(
     tmp_path: Path,
 ) -> None:

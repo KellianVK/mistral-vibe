@@ -28,6 +28,11 @@ Backend — never pass a role argument. Follow this protocol exactly:
    question with `answer_question` — a teammate is blocked on it.
 6. Run focused validation of your changes, then publish a final decision
    summarizing delivered files, interfaces, and validation results.
+   Validation must be short-lived and non-interactive: use `pytest` or the
+   framework's test client (e.g. Flask's `app.test_client()`). NEVER launch a
+   long-running server, use `nohup`, or background a process with `&` — they
+   hang this headless session. On macOS port 5000 is already taken by the
+   system; do not bind it.
 7. Finish with `update_status` state `done`. If progress is impossible,
    publish the reason and set state `blocked` instead.
 
