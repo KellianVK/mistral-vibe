@@ -770,3 +770,95 @@ async def test_run_workflow_uses_init_team_config(
 
     assert set(launched) == {"Planner", "Reviewer", "Backend", "QA", "Security"}
     assert "Frontend" not in launched
+
+
+@pytest.mark.asyncio
+async def test_reviewer_rejudges_after_successful_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vibe.workflow.store import read_broadcasts
+
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    runs: list[str] = []
+
+    async def fake_run_worker(
+        role: RoleSpec,
+        _goal: str,
+        _brief: str,
+        _workdir: Path,
+        database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        runs.append(role.name)
+        if role.name == "QA":
+            verdict = "FAIL: scoring wrong" if runs.count("QA") == 1 else "PASS: green"
+            publish_decision(database_path, "QA", verdict, topic="qa-verdict")
+        elif role.name == "Reviewer":
+            verdict = (
+                "NO-GO: QA red" if runs.count("Reviewer") == 1 else "GO: all green"
+            )
+            publish_decision(database_path, "Reviewer", verdict, topic="review-verdict")
+        else:
+            publish_decision(database_path, role.name, f"{role.name} delivered")
+        return orchestrator.WorkerResult(role=role.name, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    await orchestrator.run_workflow(
+        "goal",
+        workdir,
+        role_names=["Planner", "Backend", "QA", "Reviewer"],
+        warm_start=False,
+        environment={},
+    )
+
+    # Reviewer judged once before the retry, once after.
+    assert runs.count("Reviewer") == 2
+    from vibe.workflow.setup import workflow_database_path
+    from vibe.workflow.store import read_decisions
+
+    verdicts = read_decisions(workflow_database_path(workdir), topic="review-verdict")
+    assert verdicts[-1]["summary"].startswith("GO:")
+    broadcasts = read_broadcasts(workflow_database_path(workdir))
+    assert any("re-running Reviewer" in b["content"] for b in broadcasts)
+
+
+@pytest.mark.asyncio
+async def test_no_rejudge_when_qa_passes_first_try(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    runs: list[str] = []
+
+    async def fake_run_worker(
+        role: RoleSpec,
+        _goal: str,
+        _brief: str,
+        _workdir: Path,
+        database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        runs.append(role.name)
+        if role.name == "QA":
+            publish_decision(database_path, "QA", "PASS: green", topic="qa-verdict")
+        else:
+            publish_decision(database_path, role.name, f"{role.name} delivered")
+        return orchestrator.WorkerResult(role=role.name, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    await orchestrator.run_workflow(
+        "goal",
+        workdir,
+        role_names=["Planner", "Backend", "QA", "Reviewer"],
+        warm_start=False,
+        environment={},
+    )
+
+    assert runs.count("Reviewer") == 1

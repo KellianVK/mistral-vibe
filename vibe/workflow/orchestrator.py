@@ -625,6 +625,34 @@ async def _run_wave(
     ]
 
 
+async def _rejudge_after_retry(
+    roles: list[RoleSpec],
+    goal: str,
+    brief: str,
+    workdir: Path,
+    database_path: Path,
+    deadline: float,
+    environment: Mapping[str, str],
+) -> list[WorkerResult]:
+    """A retry changed the code after the Reviewer judged it — re-judge.
+
+    Without this, a pre-retry NO-GO stays the latest review-verdict forever
+    and keeps the push gate closed on code QA has since blessed.
+    """
+    reviewer = next((role for role in roles if role.name == "Reviewer"), None)
+    if reviewer is None:
+        return []
+    await asyncio.to_thread(
+        broadcast,
+        database_path,
+        "Orchestrator",
+        "Retry succeeded — re-running Reviewer to re-judge the fixed code",
+    )
+    return await _run_wave(
+        [reviewer], goal, brief, workdir, database_path, deadline, environment
+    )
+
+
 async def _quality_loop(
     roles: list[RoleSpec],
     goal: str,
@@ -646,10 +674,16 @@ async def _quality_loop(
         return []
 
     results: list[WorkerResult] = []
+    retried = False
     for iteration in range(1, max_loop_iterations + 1):
         verdict = await _latest_qa_verdict(database_path)
         if verdict is None or not verdict.strip().upper().startswith("FAIL"):
+            if retried:
+                results += await _rejudge_after_retry(
+                    roles, goal, brief, workdir, database_path, deadline, environment
+                )
             return results
+        retried = True
 
         implementers = [
             role
