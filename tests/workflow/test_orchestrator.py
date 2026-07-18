@@ -89,7 +89,7 @@ def test_build_worker_command_targets_this_fork_with_role_profile(
         "--max-price",
         "1.00",
         "--max-turns",
-        "25",
+        "40",
         "--workdir",
         str(workdir),
     ]

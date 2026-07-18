@@ -7,7 +7,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 GOAL="Build a small Todo API with JWT auth: Flask app in server/app.py with POST /auth/register and POST /auth/login returning {token, expires_in}, and /todos CRUD guarded by the JWT. Frontend: a minimal web/index.html client for login and listing/adding todos against the published contract. Keep everything small and runnable."
 SCRATCH="$(mktemp -d /tmp/miaou-rehearsal-XXXXXX)"
-TIMEOUT="${MIAOU_TIMEOUT:-480}"
+TIMEOUT="${MIAOU_TIMEOUT:-600}"
 
 echo "Rehearsal scratch: $SCRATCH"
 for run in 1 2; do
