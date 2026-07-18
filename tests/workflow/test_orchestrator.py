@@ -87,7 +87,7 @@ def test_build_worker_command_targets_this_fork_with_role_profile(
         "--agent",
         "backend",
         "--max-price",
-        "1.00",
+        "2.00",
         "--max-turns",
         "40",
         "--workdir",
