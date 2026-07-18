@@ -718,6 +718,15 @@ rejected with a toast. **Ctrl+C** pops the last queued item (LIFO);
 Skills are specialized instruction sets the model can load on demand.
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter.
 
+The built-in user-invocable `workflow` Skill is available in every project:
+- `/workflow <software-delivery-goal>` starts Planner, Backend, and QA in the
+  background through a shared SQLite/MCP blackboard.
+- `/workflow status` reports the current run and per-agent status.
+- `/workflow stop` cancels the current run.
+
+It injects the workflow MCP server into child-process runtime configuration and
+does not create project `.vibe` files.
+
 ### Skill File Format
 
 ```markdown
@@ -734,6 +743,9 @@ Detailed instructions for the model...
 ```
 
 ### Skill Search Order (first match wins)
+
+Built-in names are reserved and cannot be overridden. Other skills use this
+search order:
 
 1. `skill_paths` from config.toml
 2. `.vibe/skills/` in trusted project directory

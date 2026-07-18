@@ -5,11 +5,16 @@ from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 import os
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 
-from orchestrator import WorkerResult, run_workflow
-from setup_workflow import workflow_database_path
-from workflow_memory.store import StatusSnapshot, read_status_snapshot
+from workflow_memory.store import (
+    StatusSnapshot,
+    read_status_snapshot,
+    workflow_database_path,
+)
+
+if TYPE_CHECKING:
+    from orchestrator import WorkerResult
 
 WORKER_ENV = "VIBE_WORKFLOW_WORKER"
 
@@ -38,6 +43,8 @@ class WorkflowStatus(TypedDict):
 async def _run_configured_workflow(
     goal: str, workdir: Path, environment: Mapping[str, str]
 ) -> list[WorkerResult]:
+    from orchestrator import run_workflow
+
     return await run_workflow(goal, workdir, environment=environment)
 
 
@@ -63,10 +70,6 @@ class WorkflowController:
         async with self._lock:
             if not normalized_goal:
                 return self._action(False, "A non-empty workflow goal is required")
-            if not self._environment.get("MISTRAL_API_KEY"):
-                return self._action(
-                    False, "MISTRAL_API_KEY is not available to the Vibe process"
-                )
             if self._task is not None and not self._task.done():
                 return self._action(False, "A workflow is already running")
 
@@ -85,10 +88,7 @@ class WorkflowController:
             if state == "idle":
                 state = _infer_state(agents)
             return WorkflowStatus(
-                state=state,
-                goal=self._goal,
-                error=self._error,
-                agents=agents,
+                state=state, goal=self._goal, error=self._error, agents=agents
             )
 
     async def stop(self) -> WorkflowAction:
@@ -128,10 +128,7 @@ class WorkflowController:
 
     def _action(self, ok: bool, message: str) -> WorkflowAction:
         return WorkflowAction(
-            ok=ok,
-            state=self._state,
-            message=message,
-            goal=self._goal,
+            ok=ok, state=self._state, message=message, goal=self._goal
         )
 
 

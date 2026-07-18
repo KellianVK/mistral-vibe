@@ -7,8 +7,6 @@ from mcp.server.fastmcp import FastMCP
 
 from workflow_memory import store
 
-DEFAULT_DATABASE_NAME = "workflow.db"
-
 
 def create_server(db_path: str | Path | None = None) -> FastMCP:
     database_path = _resolve_database_path(db_path)
@@ -51,7 +49,7 @@ def _resolve_database_path(db_path: str | Path | None) -> Path:
         return Path(db_path).expanduser().resolve()
     if configured_path := os.environ.get("WORKFLOW_DB"):
         return Path(configured_path).expanduser().resolve()
-    return (Path.cwd() / DEFAULT_DATABASE_NAME).resolve()
+    return store.workflow_database_path(Path.cwd())
 
 
 mcp = create_server()

@@ -146,7 +146,6 @@ include = [
     "prompts/",
     "orchestrator.py",
     "dashboard.py",
-    "setup_workflow.py",
 ]
 exclude = ["tests/"]
 
@@ -154,7 +153,6 @@ exclude = ["tests/"]
 vibe = "vibe.cli.entrypoint:main"
 vibe-acp = "vibe.acp.entrypoint:main"
 vibe-workflow = "orchestrator:main"
-vibe-workflow-setup = "setup_workflow:main"
 
 [tool.uv]
 exclude-newer = "2 days"
@@ -205,10 +203,10 @@ reportPrivateImportUsage = false
 
 include = [
     "vibe/**/*.py",
+    "workflow_control/**/*.py",
     "workflow_memory/**/*.py",
     "orchestrator.py",
     "dashboard.py",
-    "setup_workflow.py",
     "tests/**/*.py",
 ]
 exclude = ["pyinstaller/"]
@@ -218,10 +216,10 @@ venv = ".venv"
 [tool.ruff]
 include = [
     "vibe/**/*.py",
+    "workflow_control/**/*.py",
     "workflow_memory/**/*.py",
     "orchestrator.py",
     "dashboard.py",
-    "setup_workflow.py",
     "tests/**/*.py",
 ]
 exclude = ["pyinstaller/"]
@@ -259,7 +257,7 @@ ignore = ["D203", "D205", "D213", "ANN401", "PLR6301"]
 ban-relative-imports = "all"
 
 [tool.ruff.lint.isort]
-known-first-party = ["vibe", "workflow_memory"]
+known-first-party = ["vibe", "workflow_control", "workflow_memory"]
 force-sort-within-sections = true
 split-on-trailing-comma = false
 combine-as-imports = true

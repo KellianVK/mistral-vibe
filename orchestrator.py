@@ -11,18 +11,20 @@ import sqlite3
 import sys
 
 from dashboard import resolve_database_path, watch_status
-from setup_workflow import (
-    WorkflowConfigurationError,
-    configure_workdir,
+from workflow_memory.store import (
+    initialize_database,
+    read_decisions,
+    update_status,
     workflow_database_path,
 )
-from workflow_memory.store import initialize_database, read_decisions, update_status
 
 MAX_WORKFLOW_SECONDS = 10 * 60
 MAX_PRICE = "1.00"
 MAX_TURNS = "25"
 STREAM_LIMIT_BYTES = 10 * 1024 * 1024
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+MCP_SERVERS_ENV = "VIBE_MCP_SERVERS"
+WORKER_ENV = "VIBE_WORKFLOW_WORKER"
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,9 @@ def build_worker_prompt(role: str, goal: str) -> str:
 
 def build_worker_command(prompt: str, workdir: Path) -> list[str]:
     return [
-        "vibe",
+        sys.executable,
+        "-m",
+        "vibe.cli.entrypoint",
         "--prompt",
         prompt,
         "--output",
@@ -78,6 +82,40 @@ def build_worker_command(prompt: str, workdir: Path) -> list[str]:
         "--workdir",
         str(workdir),
     ]
+
+
+def build_worker_environment(
+    environment: Mapping[str, str], database_path: Path
+) -> dict[str, str]:
+    child_environment = dict(environment)
+    servers: list[dict[str, object]] = []
+    if serialized_servers := child_environment.get(MCP_SERVERS_ENV):
+        try:
+            parsed_servers = json.loads(serialized_servers)
+        except json.JSONDecodeError as error:
+            raise WorkflowRunError(
+                f"{MCP_SERVERS_ENV} must contain valid JSON"
+            ) from error
+        if not isinstance(parsed_servers, list) or not all(
+            isinstance(server, dict) for server in parsed_servers
+        ):
+            raise WorkflowRunError(f"{MCP_SERVERS_ENV} must contain a JSON array")
+        servers.extend(
+            server for server in parsed_servers if server.get("name") != "workflow"
+        )
+
+    servers.append({
+        "name": "workflow",
+        "transport": "stdio",
+        "command": [sys.executable],
+        "args": ["-m", "workflow_memory.server"],
+        "env": {"WORKFLOW_DB": str(database_path)},
+    })
+    child_environment[MCP_SERVERS_ENV] = json.dumps(servers)
+    child_environment.setdefault("PYTHONIOENCODING", "utf-8")
+    child_environment.setdefault("PYTHONUTF8", "1")
+    child_environment[WORKER_ENV] = "1"
+    return child_environment
 
 
 def _append_text(path: Path, text: str) -> None:
@@ -274,12 +312,10 @@ async def run_worker(
         )
 
     await _set_status(database_path, role, "working", f"Working on: {goal}")
-    child_environment = dict(environment if environment is not None else os.environ)
-    child_environment.setdefault("PYTHONIOENCODING", "utf-8")
-    child_environment.setdefault("PYTHONUTF8", "1")
-    child_environment["VIBE_WORKFLOW_WORKER"] = "1"
-
     try:
+        child_environment = build_worker_environment(
+            environment if environment is not None else os.environ, database_path
+        )
         command, json_log, stderr_log = await _prepare_worker(role, goal, workdir)
     except (OSError, WorkflowRunError) as error:
         return await _blocked_worker(database_path, role, str(error))
@@ -308,13 +344,6 @@ async def run_workflow(
 ) -> list[WorkerResult]:
     resolved_workdir = workdir.expanduser().resolve()
     child_environment = dict(environment if environment is not None else os.environ)
-    if not child_environment.get("MISTRAL_API_KEY"):
-        raise WorkflowRunError("MISTRAL_API_KEY must be set in the environment")
-
-    try:
-        configure_workdir(resolved_workdir)
-    except WorkflowConfigurationError as error:
-        raise WorkflowRunError(str(error)) from error
 
     database_path = workflow_database_path(resolved_workdir)
     try:

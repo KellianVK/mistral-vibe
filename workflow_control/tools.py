@@ -46,6 +46,7 @@ class WorkflowAgentResult(BaseModel):
     role: str
     state: str
     current_task: str
+    updated_at: str
     decision_count: int
 
 
@@ -88,7 +89,9 @@ def _status_result(status: WorkflowStatus) -> WorkflowControlResult:
         message="Workflow status loaded",
         goal=status["goal"],
         error=status["error"],
-        agents=[WorkflowAgentResult.model_validate(agent) for agent in status["agents"]],
+        agents=[
+            WorkflowAgentResult.model_validate(agent) for agent in status["agents"]
+        ],
     )
 
 

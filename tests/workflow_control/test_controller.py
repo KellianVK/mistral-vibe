@@ -7,8 +7,15 @@ from pathlib import Path
 import pytest
 
 from orchestrator import WorkerResult
+from tests.conftest import build_test_vibe_config
+from vibe.core.tools.manager import ToolManager
 from workflow_control._controller import WorkflowController
-from workflow_control.tools import GetWorkflowStatus, StartWorkflow, StopWorkflow
+from workflow_control.tools import (
+    GetWorkflowStatus,
+    StartWorkflow,
+    StopWorkflow,
+    _status_result,
+)
 
 
 @pytest.mark.asyncio
@@ -31,9 +38,7 @@ async def test_controller_runs_workflow_in_background_and_reports_status(
             WorkerResult(role="QA", return_code=0),
         ]
 
-    controller = WorkflowController(
-        tmp_path, runner=runner, environment={"MISTRAL_API_KEY": "test-key"}
-    )
+    controller = WorkflowController(tmp_path, runner=runner, environment={})
 
     assert await controller.start("Build a Todo API") == {
         "ok": True,
@@ -45,7 +50,7 @@ async def test_controller_runs_workflow_in_background_and_reports_status(
     assert invocation == {
         "goal": "Build a Todo API",
         "workdir": tmp_path.resolve(),
-        "environment": {"MISTRAL_API_KEY": "test-key"},
+        "environment": {},
     }
     assert (await controller.start("Start another workflow"))["ok"] is False
 
@@ -104,3 +109,32 @@ def test_control_tools_are_hidden_inside_orchestrated_workers(
     assert StartWorkflow.is_available() is False
     assert GetWorkflowStatus.is_available() is False
     assert StopWorkflow.is_available() is False
+
+
+def test_control_tools_are_built_in_without_project_configuration() -> None:
+    manager = ToolManager(lambda: build_test_vibe_config())
+
+    assert {
+        "start_workflow",
+        "get_workflow_status",
+        "stop_workflow",
+    } <= manager.available_tools.keys()
+
+
+def test_status_result_accepts_database_timestamp() -> None:
+    result = _status_result({
+        "state": "running",
+        "goal": "Build a game",
+        "error": None,
+        "agents": [
+            {
+                "role": "Backend",
+                "state": "working",
+                "current_task": "Implement gameplay",
+                "updated_at": "2026-07-18T12:26:06.770035+00:00",
+                "decision_count": 2,
+            }
+        ],
+    })
+
+    assert result.agents[0].updated_at == "2026-07-18T12:26:06.770035+00:00"

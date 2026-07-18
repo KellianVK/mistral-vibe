@@ -10,6 +10,7 @@ from typing import Literal, TypedDict
 type DatabasePath = str | Path
 type AgentState = Literal["working", "idle", "blocked", "done"]
 
+DEFAULT_DATABASE_NAME = "workflow.db"
 VALID_STATES: frozenset[str] = frozenset({"working", "idle", "blocked", "done"})
 
 
@@ -50,6 +51,10 @@ CREATE TABLE IF NOT EXISTS status (
 
 _initialized_databases: set[Path] = set()
 _initialization_lock = Lock()
+
+
+def workflow_database_path(workdir: Path) -> Path:
+    return workdir.expanduser().resolve() / DEFAULT_DATABASE_NAME
 
 
 def initialize_database(db_path: DatabasePath) -> None:

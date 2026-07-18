@@ -1,9 +1,8 @@
 # Vibe Workflow
 
-`vibe-workflow` is a hackathon extension that coordinates three unmodified
-Mistral Vibe CLI processes through a shared SQLite blackboard. It does not fork
-the Vibe agent loop or import private Vibe APIs: coordination uses project MCP
-server, custom tools, a user-invocable Skill, and Vibe's programmatic
+`vibe-workflow` coordinates three Mistral Vibe CLI processes through a shared
+SQLite blackboard. It uses a built-in Skill and tools, an MCP server injected
+through Vibe's runtime configuration layer, and Vibe's programmatic
 `--prompt --output streaming` mode.
 
 ## Install
@@ -15,87 +14,29 @@ this repository's root, install the locked project environment:
 uv sync
 ```
 
-Alternatively, from an activated Python 3.12 virtual environment, install the
-checkout in editable mode:
-
-```console
-python -m pip install -e .
-```
-
 The target project must be a separate, existing directory. Keeping it separate
 prevents the Backend and QA workers from editing this Vibe checkout while they
 share auto-approved access to their target workdir.
 
-## Configure a target project
-
-Run the setup helper once for each target project, using an absolute path:
-
-```console
-uv run vibe-workflow-setup --workdir "<absolute-path-to-target-project>"
-```
-
-With the editable pip installation, run the same helper with
-`python setup_workflow.py`. The helper preserves existing valid TOML, appends an
-idempotent `workflow` MCP entry in `<workdir>/.vibe/config.toml`, installs the
-project Skill at `<workdir>/.vibe/skills/workflow/SKILL.md`, and installs its
-custom-tool loader at `<workdir>/.vibe/tools/workflow_control.py`. It refuses to
-replace incompatible extensions that already use those paths. The MCP entry is:
-
-```toml
-[[mcp_servers]]
-name = "workflow"
-transport = "stdio"
-command = "python"
-args = ["-m", "workflow_memory.server"]
-env = { "WORKFLOW_DB" = "<absolute-workdir>/workflow.db" }
-```
-
-The setup helper escapes the platform-specific path, including Windows paths;
-prefer it over copying the TOML by hand.
-
-## Persistently trust the workdir
-
-This step is mandatory for this Vibe checkout. After setup has created the
-project `.vibe/config.toml`, start one interactive Vibe session in the target:
-
-```console
-uv run vibe --workdir "<absolute-path-to-target-project>"
-```
-
-Accept the option that persistently trusts the folder (or its repository), then
-exit Vibe. Do not substitute the one-invocation `--trust` flag for this setup
-step. Programmatic Vibe never opens the trust dialog: for an untrusted folder it
-continues but ignores the project configuration, so the three `workflow_*` MCP
-tools would be unavailable to the workers.
-
 ## Authentication
 
-`MISTRAL_API_KEY` must be present in the environment that launches the
-orchestrator. The orchestrator checks it before starting any worker and passes a
-copy of its environment to every Vibe subprocess.
-
-POSIX shells:
-
-```console
-export MISTRAL_API_KEY="your-key"
-```
-
-PowerShell:
-
-```powershell
-$env:MISTRAL_API_KEY = "your-key"
-```
+The workers use the same Vibe installation, home directory, provider
+configuration, environment, and OS keyring as the parent session. Any
+authentication method already supported by Vibe therefore works without
+workflow-specific setup.
 
 ## Run from the interactive Vibe CLI
 
-Start Vibe in the configured target project:
+Start Vibe from any target project. During development, select this checkout
+with `uv --project`:
 
 ```console
-uv run vibe --workdir "<absolute-path-to-target-project>"
+cd <target-project>
+uv run --project <path-to-mistral-vibe> vibe
 ```
 
-The setup helper exposes `/workflow` in Vibe's slash-command menu. Start a run
-without blocking the TUI:
+`/workflow` is built in and appears in the slash-command menu without a project
+`.vibe` directory or setup command. Start a run without blocking the TUI:
 
 ```text
 /workflow API Todo en Flask avec 2 endpoints + tests
@@ -110,8 +51,7 @@ session remains available. Inspect or cancel that run from the same CLI:
 ```
 
 Keep the Vibe session open until the workflow finishes. The in-process control
-tools allow only one background run per Vibe session, retain access to the API
-key without copying it into project configuration, and are hidden from
+tools allow only one background run per Vibe session and are hidden from
 orchestrated child workers to prevent recursive workflow launches.
 
 ## Run the Todo demo
@@ -163,7 +103,7 @@ the first status update it displays `No agent status yet`.
 ## Architecture
 
 ```text
-interactive Vibe -> /workflow Skill -> custom control tools
+interactive Vibe -> /workflow Skill -> built-in control tools
                                          |
                                          v
                                     orchestrator.py
@@ -177,9 +117,12 @@ dashboard.py (read-only) -------------------------------------------------------
 ### Shared memory
 
 `workflow_memory/server.py` is a FastMCP stdio server backed by
-`<workdir>/workflow.db`. Each Vibe process starts its own server process, while
-all of them use the same database. SQLite runs in WAL mode; every connection
-uses a 5,000 ms busy timeout so short concurrent writes can serialize safely.
+`<workdir>/workflow.db`. The orchestrator injects its server definition through
+the `VIBE_MCP_SERVERS` runtime configuration for child processes only; it never
+creates or modifies project `.vibe` files. Each Vibe process starts its own
+server process, while all of them use the same database. SQLite runs in WAL
+mode; every connection uses a 5,000 ms busy timeout so short concurrent writes
+can serialize safely.
 
 The database contains two tables:
 
@@ -211,7 +154,7 @@ The tool docstrings and role prompts deliberately repeat the protocol: read
 first, publish every significant deliverable or interface contract, and update
 status at the beginning and end of work.
 
-The project custom-tool extension exposes three user-facing control tools:
+The built-in workflow integration exposes three user-facing control tools:
 
 - `start_workflow(goal)` starts orchestration in a background
   task and returns immediately.

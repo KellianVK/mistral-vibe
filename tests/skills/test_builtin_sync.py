@@ -14,6 +14,18 @@ class TestBuiltinSkills:
     def test_vibe_skill_is_registered(self) -> None:
         assert "vibe" in BUILTIN_SKILLS
 
+    def test_workflow_skill_is_registered_for_slash_commands(self) -> None:
+        skill = BUILTIN_SKILLS["workflow"]
+
+        assert skill.skill_path is None
+        assert skill.user_invocable is True
+        assert skill.allowed_tools == [
+            "start_workflow",
+            "get_workflow_status",
+            "stop_workflow",
+        ]
+        assert "/workflow status" in skill.prompt
+
     def test_vibe_skill_has_no_path(self) -> None:
         assert BUILTIN_SKILLS["vibe"].skill_path is None
 

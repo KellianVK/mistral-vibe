@@ -21,8 +21,6 @@
 
 Mistral Vibe is a command-line coding assistant powered by Mistral's models. It provides a conversational interface to your codebase, allowing you to use natural language to explore, modify, and interact with your projects through a powerful set of tools.
 
-> **Hackathon extension:** [Vibe Workflow](VIBE_WORKFLOW.md) launches Planner, Backend, and QA from the interactive Vibe CLI with `/workflow`, coordinated through a shared SQLite/MCP blackboard.
-
 > [!WARNING]
 > Mistral Vibe works on Windows, but we officially support and target UNIX environments.
 
@@ -110,6 +108,9 @@ pip install mistral-vibe
 - **Highly Configurable**: Customize models, providers, tool permissions, and UI preferences through a simple `config.toml` file.
 - **Safety First**: Features tool execution approval.
 - **Multiple Built-in Agents**: Choose from different agent profiles tailored for specific workflows.
+- **Multi-agent Workflows**: Use `/workflow <goal>` to coordinate Planner,
+  Backend, and QA agents through a shared SQLite/MCP blackboard. See
+  [Vibe Workflow](VIBE_WORKFLOW.md).
 
 ### Built-in Agents
 
@@ -328,6 +329,16 @@ Vibe provides several built-in slash commands. Use slash commands by typing them
 ```
 > /help
 ```
+
+The built-in workflow Skill starts and controls background multi-agent runs:
+
+```text
+/workflow <software-delivery-goal>
+/workflow status
+/workflow stop
+```
+
+It is available in every project without creating a `.vibe` directory.
 
 ### Custom Slash Commands via Skills
 

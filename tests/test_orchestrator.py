@@ -3,10 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
 import orchestrator
+from vibe.core.config.layers.environment import EnvironmentLayer
+from vibe.core.config.models import MCPStdio
+from vibe.core.config.vibe_schema import VibeConfigSchema
 from workflow_memory.store import initialize_database, publish_decision
 
 
@@ -63,7 +67,9 @@ def test_build_worker_command_uses_programmatic_safety_limits_as_single_argv(
     command = orchestrator.build_worker_command(prompt, workdir)
 
     assert command == [
-        "vibe",
+        sys.executable,
+        "-m",
+        "vibe.cli.entrypoint",
         "--prompt",
         prompt,
         "--output",
@@ -78,6 +84,60 @@ def test_build_worker_command_uses_programmatic_safety_limits_as_single_argv(
         "--workdir",
         str(workdir),
     ]
+
+
+def test_build_worker_environment_adds_runtime_mcp_without_project_files(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "workflow.db"
+    existing_server = {
+        "name": "docs",
+        "transport": "http",
+        "url": "https://example.test/mcp",
+    }
+
+    environment = orchestrator.build_worker_environment(
+        {"VIBE_MCP_SERVERS": json.dumps([existing_server])}, database_path
+    )
+
+    assert json.loads(environment["VIBE_MCP_SERVERS"]) == [
+        existing_server,
+        {
+            "name": "workflow",
+            "transport": "stdio",
+            "command": [sys.executable],
+            "args": ["-m", "workflow_memory.server"],
+            "env": {"WORKFLOW_DB": str(database_path)},
+        },
+    ]
+    assert not (tmp_path / ".vibe").exists()
+
+
+def test_build_worker_environment_rejects_invalid_mcp_json(tmp_path: Path) -> None:
+    with pytest.raises(
+        orchestrator.WorkflowRunError, match="VIBE_MCP_SERVERS must contain valid JSON"
+    ):
+        orchestrator.build_worker_environment(
+            {"VIBE_MCP_SERVERS": "not-json"}, tmp_path / "workflow.db"
+        )
+
+
+@pytest.mark.asyncio
+async def test_worker_mcp_environment_is_valid_vibe_runtime_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environment = orchestrator.build_worker_environment({}, tmp_path / "workflow.db")
+    monkeypatch.setenv("VIBE_MCP_SERVERS", environment["VIBE_MCP_SERVERS"])
+
+    raw_config = await EnvironmentLayer(schema=VibeConfigSchema).load()
+    config = VibeConfigSchema.model_validate(raw_config.model_dump())
+
+    assert len(config.mcp_servers) == 1
+    server = config.mcp_servers[0]
+    assert isinstance(server, MCPStdio)
+    assert server.name == "workflow"
+    assert server.argv() == [sys.executable, "-m", "workflow_memory.server"]
+    assert server.env == {"WORKFLOW_DB": str(tmp_path / "workflow.db")}
 
 
 @pytest.mark.asyncio
@@ -137,17 +197,27 @@ async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
     ]
     command = invocation["command"]
     assert isinstance(command, tuple)
-    assert command[0] == "vibe"
+    assert command[:3] == (sys.executable, "-m", "vibe.cli.entrypoint")
     assert command[command.index("--prompt") + 1] == "Implement the API"
     assert command[command.index("--workdir") + 1] == str(workdir)
     options = invocation["options"]
     assert isinstance(options, dict)
-    assert options["env"] == {
+    expected_environment = {
         **environment,
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
         "VIBE_WORKFLOW_WORKER": "1",
     }
+    expected_environment["VIBE_MCP_SERVERS"] = json.dumps([
+        {
+            "name": "workflow",
+            "transport": "stdio",
+            "command": [sys.executable],
+            "args": ["-m", "workflow_memory.server"],
+            "env": {"WORKFLOW_DB": str(database_path)},
+        }
+    ])
+    assert options["env"] == expected_environment
 
     json_lines = (
         (workdir / "logs" / "backend.jsonl").read_text(encoding="utf-8").splitlines()
@@ -284,13 +354,7 @@ async def test_run_workflow_starts_parallel_workers_after_planner_failure(
         lifecycle.append(f"finish:{role}")
         return orchestrator.WorkerResult(role=role, return_code=0)
 
-    configured: list[Path] = []
     initialized: list[Path] = []
-    monkeypatch.setattr(
-        orchestrator,
-        "configure_workdir",
-        lambda path: configured.append(path) or path / ".vibe" / "config.toml",
-    )
     monkeypatch.setattr(
         orchestrator, "initialize_database", lambda path: initialized.append(Path(path))
     )
@@ -313,8 +377,8 @@ async def test_run_workflow_starts_parallel_workers_after_planner_failure(
     )
 
     resolved_workdir = workdir.resolve()
-    assert configured == [resolved_workdir]
     assert initialized == [resolved_workdir / "workflow.db"]
+    assert not (resolved_workdir / ".vibe").exists()
     assert lifecycle[:2] == ["start:Planner", "finish:Planner"]
     assert set(lifecycle[2:4]) == {"start:Backend", "start:QA"}
     assert {result.role for result in results} == {"Planner", "Backend", "QA"}
