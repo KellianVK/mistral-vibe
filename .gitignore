@@ -1,0 +1,19 @@
+# Vendored fork — has its own git history, not tracked as a submodule/subtree here
+mistral-vibe/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Vite
+node_modules/
+visualizer/dist/
+
+# Runtime state
+.vibe/workflow-state.json
+*.log
+.DS_Store
