@@ -14,6 +14,7 @@ from vibe.workflow.store import (
     initialize_database,
     publish_decision,
     read_status,
+    read_status_snapshot,
     update_status,
 )
 
@@ -110,6 +111,31 @@ def test_warm_start_brief_lists_goal_roles_and_files(tmp_path: Path) -> None:
     assert "app.py" in brief
     assert ".hidden" not in brief
     assert "junk.js" not in brief
+
+
+@pytest.mark.asyncio
+async def test_block_unstarted_roles_marks_only_queued_roles_blocked(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "workflow.db"
+    initialize_database(database_path)
+    roles = select_roles(["Planner", "Backend", "Reviewer"])
+
+    await orchestrator._initialize_role_statuses(database_path, roles)
+    update_status(database_path, "Planner", "done", "Completed")
+    update_status(database_path, "Backend", "working", "Implementing")
+
+    await orchestrator._block_unstarted_roles(database_path, roles)
+
+    statuses = {
+        status["role"]: status for status in read_status_snapshot(database_path)
+    }
+    assert statuses["Planner"]["state"] == "done"
+    assert statuses["Backend"]["state"] == "working"
+    assert statuses["Reviewer"]["state"] == "blocked"
+    assert statuses["Reviewer"]["current_task"] == (
+        "Orchestrator cancelled before starting"
+    )
 
 
 def test_build_worker_prompt_injects_goal_brief_and_decisions(tmp_path: Path) -> None:
@@ -457,10 +483,17 @@ async def test_run_workflow_runs_waves_in_order_with_parallel_second_wave(
 
     # The run reset happened: a fresh run row exists with the goal.
     from vibe.workflow.setup import workflow_database_path
-    from vibe.workflow.store import current_run
+    from vibe.workflow.store import current_run, read_status_snapshot
 
-    run = current_run(workflow_database_path(workdir))
+    database_path = workflow_database_path(workdir)
+    run = current_run(database_path)
     assert run is not None and run["goal"] == "Build a Todo API"
+    statuses = {
+        status["role"]: status for status in read_status_snapshot(database_path)
+    }
+    assert statuses["Planner"]["state"] == "idle"
+    assert statuses["Backend"]["state"] == "idle"
+    assert statuses["Frontend"]["state"] == "idle"
 
 
 def test_record_file_changes_attributes_via_claims(tmp_path: Path) -> None:
