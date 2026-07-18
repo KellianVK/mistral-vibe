@@ -718,6 +718,31 @@ rejected with a toast. **Ctrl+C** pops the last queued item (LIFO);
 Skills are specialized instruction sets the model can load on demand.
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter.
 
+## MiaouFlow (this fork's multi-agent orchestration)
+
+This fork ships MiaouFlow: one command spawns a team of Vibe agents that
+coordinate through a shared SQLite blackboard, with a live web board
+(React Flow) on http://127.0.0.1:8787.
+
+- Terminal: `vibe workflow init` (conversational setup, 6-8 agent team,
+  auto-run + browser), `vibe workflow run --goal "..." [--roles ...]`,
+  `vibe workflow board`, `vibe workflow status`.
+- In-session: the built-in user-invocable `workflow` Skill —
+  `/workflow <goal>` starts the team in the background via the
+  `start_workflow` tool (the session stays usable), `/workflow status`
+  summarizes per-agent state, `/workflow stop` cancels.
+- Roles: Planner, Backend, Frontend by default; QA, Security, DevOps, Docs,
+  Reviewer via `--roles` or `init`. Waves run in parallel; a QA `FAIL:`
+  verdict triggers a bounded retry loop; the Reviewer's `GO:` verdict gates
+  `git push` through a pre_tool hook.
+- Agents get 11 blackboard tools (decisions, questions, claims, status,
+  messaging) visible only inside workflow workers; role identity is pinned
+  by the orchestrator. Planner/Reviewer cannot write files or run bash;
+  Security cannot edit code (profile-level `disabled_tools`).
+- Per-workdir state lives in `.vibe/workflow.db`; generated agent profiles
+  in `.vibe/agents/`; each run resets the board. See TESTING.md and
+  AMELIORATIONS.md at the repo root.
+
 ### Skill File Format
 
 ```markdown

@@ -13,6 +13,18 @@ def test_workflow_skill_is_builtin_and_user_invocable() -> None:
     assert "start_workflow" in skill.prompt
     assert "get_workflow_status" in skill.prompt
     assert "stop_workflow" in skill.prompt
+    assert skill.allowed_tools == [
+        "start_workflow",
+        "get_workflow_status",
+        "stop_workflow",
+    ]
+
+
+def test_vibe_self_awareness_skill_documents_miaouflow() -> None:
+    vibe_skill = BUILTIN_SKILLS["vibe"]
+    assert "MiaouFlow" in vibe_skill.prompt
+    assert "/workflow" in vibe_skill.prompt
+    assert "vibe workflow init" in vibe_skill.prompt
 
 
 def test_control_tools_hidden_inside_workers(monkeypatch: pytest.MonkeyPatch) -> None:

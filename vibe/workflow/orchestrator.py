@@ -17,6 +17,7 @@ import difflib
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import sqlite3
 import sys
@@ -48,6 +49,20 @@ BRIEF_FILE_MAP_LIMIT = 60
 _SKIPPED_DIRS = {".git", ".vibe", "node_modules", "__pycache__", ".venv", "logs"}
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+STOP_EVENT_PATTERN = re.compile(r"<vibe_stop_event>(.*?)</vibe_stop_event>", re.DOTALL)
+
+
+def _read_worker_stop_reason(stderr_log: Path) -> str | None:
+    """Human-readable stop reason Vibe prints on stderr (turn/price limits)."""
+    try:
+        matches = STOP_EVENT_PATTERN.findall(
+            stderr_log.read_text(encoding="utf-8", errors="replace")
+        )
+    except OSError:
+        return None
+    if not matches:
+        return None
+    return " ".join(matches[-1].split())
 
 
 @dataclass(frozen=True)
@@ -465,10 +480,11 @@ async def _monitor_worker(
                 file=sys.stderr,
             )
             return WorkerResult(role=role, return_code=0)
+        stop_reason = await asyncio.to_thread(_read_worker_stop_reason, stderr_log)
         return await _blocked_worker(
             database_path,
             role,
-            f"Vibe exited with code {return_code}",
+            stop_reason or f"Vibe exited with code {return_code}",
             return_code=return_code,
         )
 

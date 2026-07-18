@@ -49,5 +49,6 @@ SKILL = SkillInfo(
         "/workflow status, /workflow stop. Live board included."
     ),
     user_invocable=True,
+    allowed_tools=["start_workflow", "get_workflow_status", "stop_workflow"],
     prompt=_PROMPT,
 )

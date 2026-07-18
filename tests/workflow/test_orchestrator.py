@@ -671,3 +671,56 @@ async def test_initial_statuses_show_waiting_dependencies(tmp_path: Path) -> Non
     assert statuses["Planner"]["current_task"] == "Waiting to start"
     assert statuses["Backend"]["current_task"] == "Waiting for Planner"
     assert statuses["QA"]["current_task"] == "Waiting for Planner, Backend"
+
+
+def test_stop_reason_parsed_from_stderr_log(tmp_path: Path) -> None:
+    log = tmp_path / "backend.stderr.log"
+    log.write_text(
+        "Traceback ...\n<vibe_stop_event>Price limit exceeded: $1.05 > "
+        "$1.00</vibe_stop_event>\n",
+        encoding="utf-8",
+    )
+    assert (
+        orchestrator._read_worker_stop_reason(log)
+        == "Price limit exceeded: $1.05 > $1.00"
+    )
+    assert orchestrator._read_worker_stop_reason(tmp_path / "missing.log") is None
+
+
+@pytest.mark.asyncio
+async def test_blocked_message_uses_stop_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    database_path = workdir / "workflow.db"
+    initialize_database(database_path)
+    process = FakeProcess(
+        return_code=1,
+        stdout=b'{"role":"assistant","content":"partial"}\n',
+        stderr=b"<vibe_stop_event>Turn limit of 40 reached</vibe_stop_event>\n",
+    )
+
+    async def fake_create_subprocess_exec(
+        *_command: str, **_options: object
+    ) -> FakeProcess:
+        return process
+
+    monkeypatch.setattr(
+        orchestrator.asyncio, "create_subprocess_exec", fake_create_subprocess_exec
+    )
+
+    result = await orchestrator.run_worker(
+        backend_role(),
+        "goal",
+        "",
+        workdir,
+        database_path,
+        asyncio.get_running_loop().time() + 30,
+        environment={},
+    )
+
+    assert not result.succeeded
+    status = read_status(database_path, "Backend")
+    assert status is not None
+    assert status["current_task"] == "Turn limit of 40 reached"
