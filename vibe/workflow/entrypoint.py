@@ -76,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--no-board", action="store_true", help="Do not start the live web board"
     )
+    run_parser.add_argument(
+        "--max-loop-iterations",
+        type=int,
+        default=3,
+        help="Max QA-fail retry rounds of the quality loop (default: 3; 0 disables)",
+    )
 
     board_parser = subparsers.add_parser(
         "board", help="Serve the MiaouFlow board for an existing workflow directory"
@@ -148,6 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_seconds=args.timeout,
         warm_start=not args.no_warm_start,
         board_port=None if args.no_board else args.port,
+        max_loop_iterations=args.max_loop_iterations,
     )
 
 

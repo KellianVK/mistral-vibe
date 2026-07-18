@@ -510,3 +510,120 @@ def test_unified_diff_generation() -> None:
     assert "-a = 1" in diff and "+a = 2" in diff
     assert orchestrator._unified_diff("x", None, None) is None
     assert orchestrator._unified_diff("x", "same\n", "same\n") is None
+
+
+@pytest.mark.asyncio
+async def test_quality_loop_reruns_implementers_until_qa_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vibe.workflow.store import read_broadcasts
+
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    lifecycle: list[str] = []
+
+    async def fake_run_worker(
+        role: RoleSpec,
+        _goal: str,
+        brief: str,
+        _workdir: Path,
+        database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        lifecycle.append(role.name)
+        if role.name == "QA":
+            # First QA run fails; the rerun passes.
+            verdict = (
+                "FAIL: add() returns a-b"
+                if lifecycle.count("QA") == 1
+                else "PASS: all green"
+            )
+            publish_decision(database_path, "QA", verdict, topic="qa-verdict")
+        else:
+            publish_decision(database_path, role.name, f"{role.name} delivered")
+        if role.name == "Backend" and lifecycle.count("Backend") > 1:
+            # The retry brief carries the failure emphasis.
+            assert "PREVIOUS ATTEMPT FAILED QA" in brief
+        return orchestrator.WorkerResult(role=role.name, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    results = await orchestrator.run_workflow(
+        "Todo API",
+        workdir,
+        role_names=["Planner", "Backend", "Frontend", "QA"],
+        warm_start=True,
+        environment={},
+    )
+
+    # First pass: Planner, Backend+Frontend, QA (fail) -> retry wave -> QA pass.
+    assert lifecycle.count("QA") == 2
+    assert lifecycle.count("Backend") == 2 and lifecycle.count("Frontend") == 2
+    assert all(result.succeeded for result in results)
+    from vibe.workflow.setup import workflow_database_path
+
+    broadcasts = read_broadcasts(workflow_database_path(workdir))
+    assert any("retry 1/3" in b["content"] for b in broadcasts)
+    assert not any("ceiling" in b["content"] for b in broadcasts)
+
+
+@pytest.mark.asyncio
+async def test_quality_loop_stops_at_ceiling_and_broadcasts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vibe.workflow.store import read_broadcasts
+
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    qa_runs = 0
+
+    async def fake_run_worker(
+        role: RoleSpec,
+        _goal: str,
+        _brief: str,
+        _workdir: Path,
+        database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        nonlocal qa_runs
+        if role.name == "QA":
+            qa_runs += 1
+            publish_decision(
+                database_path, "QA", "FAIL: still broken", topic="qa-verdict"
+            )
+        else:
+            publish_decision(database_path, role.name, f"{role.name} delivered")
+        return orchestrator.WorkerResult(role=role.name, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    await orchestrator.run_workflow(
+        "Todo API",
+        workdir,
+        role_names=["Planner", "Backend", "QA"],
+        warm_start=False,
+        max_loop_iterations=2,
+        environment={},
+    )
+
+    assert qa_runs == 1 + 2  # initial + two bounded retries
+    from vibe.workflow.setup import workflow_database_path
+
+    broadcasts = read_broadcasts(workflow_database_path(workdir))
+    assert any("ceiling reached" in b["content"] for b in broadcasts)
+
+
+def test_dedicated_prompts_exist_for_all_default_roles(tmp_path: Path) -> None:
+    from vibe.workflow.roles import DEFAULT_ROLES
+
+    db = tmp_path / "workflow.db"
+    initialize_database(db)
+    for role in DEFAULT_ROLES:
+        prompt_file = orchestrator.PROMPTS_DIR / f"{role.agent_profile}.md"
+        assert prompt_file.is_file(), f"missing dedicated prompt for {role.name}"
+        prompt = orchestrator.build_worker_prompt(role, "goal", "", db)
+        assert "{{OBJECTIVE}}" not in prompt and "{{ROLE}}" not in prompt

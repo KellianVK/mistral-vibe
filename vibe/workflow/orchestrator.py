@@ -29,6 +29,7 @@ from vibe.workflow.setup import (
     workflow_database_path,
 )
 from vibe.workflow.store import (
+    broadcast,
     initialize_database,
     read_claims,
     read_decisions,
@@ -528,6 +529,113 @@ async def run_worker(
     return result
 
 
+async def _latest_qa_verdict(database_path: Path) -> str | None:
+    decisions = await asyncio.to_thread(
+        read_decisions, database_path, "QA", None, "qa-verdict"
+    )
+    return decisions[-1]["summary"] if decisions else None
+
+
+async def _run_wave(
+    wave: list[RoleSpec],
+    goal: str,
+    brief: str,
+    workdir: Path,
+    database_path: Path,
+    deadline: float,
+    environment: Mapping[str, str],
+) -> list[WorkerResult]:
+    wave_since_id = await _latest_decision_id(database_path)
+    wave_results = await asyncio.gather(
+        *(
+            run_worker(
+                role,
+                goal,
+                brief,
+                workdir,
+                database_path,
+                deadline,
+                environment=environment,
+            )
+            for role in wave
+        )
+    )
+    return [
+        await _verify_published_decision(result, database_path, wave_since_id)
+        for result in wave_results
+    ]
+
+
+async def _quality_loop(
+    roles: list[RoleSpec],
+    goal: str,
+    brief: str,
+    workdir: Path,
+    database_path: Path,
+    deadline: float,
+    environment: Mapping[str, str],
+    max_loop_iterations: int,
+) -> list[WorkerResult]:
+    """On a QA FAIL verdict, re-run the implementers then QA, bounded.
+
+    The failure needs no special plumbing into the retry prompts: the FAIL
+    decision is already on the blackboard, so the decisions digest injected
+    at spawn carries it. The brief just adds emphasis.
+    """
+    qa_spec = next((role for role in roles if role.name == "QA"), None)
+    if qa_spec is None or max_loop_iterations <= 0:
+        return []
+
+    results: list[WorkerResult] = []
+    for iteration in range(1, max_loop_iterations + 1):
+        verdict = await _latest_qa_verdict(database_path)
+        if verdict is None or not verdict.strip().upper().startswith("FAIL"):
+            return results
+
+        implementers = [
+            role
+            for role in roles
+            if role.name in qa_spec.depends_on and role.name != "Planner"
+        ]
+        if not implementers:
+            return results
+        await asyncio.to_thread(
+            broadcast,
+            database_path,
+            "Orchestrator",
+            f"QA failed — retry {iteration}/{max_loop_iterations}: re-running "
+            f"{', '.join(role.name for role in implementers)} with the failure "
+            "in context",
+        )
+        retry_brief = (
+            f"{brief}\n\nPREVIOUS ATTEMPT FAILED QA. Fix exactly what the QA "
+            f"verdict reports, do not start over: {verdict}"
+        )
+        results += await _run_wave(
+            implementers,
+            goal,
+            retry_brief,
+            workdir,
+            database_path,
+            deadline,
+            environment,
+        )
+        results += await _run_wave(
+            [qa_spec], goal, brief, workdir, database_path, deadline, environment
+        )
+
+    verdict = await _latest_qa_verdict(database_path)
+    if verdict is not None and verdict.strip().upper().startswith("FAIL"):
+        await asyncio.to_thread(
+            broadcast,
+            database_path,
+            "Orchestrator",
+            f"Quality loop ceiling reached ({max_loop_iterations} retries); "
+            f"last QA verdict still failing: {verdict[:160]}",
+        )
+    return results
+
+
 async def run_workflow(
     goal: str,
     workdir: Path,
@@ -535,6 +643,7 @@ async def run_workflow(
     role_names: list[str] | None = None,
     timeout_seconds: float | None = None,
     warm_start: bool = True,
+    max_loop_iterations: int = 3,
     environment: Mapping[str, str] | None = None,
 ) -> list[WorkerResult]:
     resolved_workdir = workdir.expanduser().resolve()
@@ -563,25 +672,25 @@ async def run_workflow(
 
     results: list[WorkerResult] = []
     for wave in waves:
-        wave_since_id = await _latest_decision_id(database_path)
-        wave_results = await asyncio.gather(
-            *(
-                run_worker(
-                    role,
-                    goal,
-                    brief,
-                    resolved_workdir,
-                    database_path,
-                    deadline,
-                    environment=child_environment,
-                )
-                for role in wave
-            )
+        results += await _run_wave(
+            wave,
+            goal,
+            brief,
+            resolved_workdir,
+            database_path,
+            deadline,
+            child_environment,
         )
-        for result in wave_results:
-            results.append(
-                await _verify_published_decision(result, database_path, wave_since_id)
-            )
+    results += await _quality_loop(
+        roles,
+        goal,
+        brief,
+        resolved_workdir,
+        database_path,
+        deadline,
+        child_environment,
+        max_loop_iterations,
+    )
     return results
 
 
@@ -599,6 +708,7 @@ async def _run_with_board(
     warm_start: bool,
     board_port: int | None,
     open_browser: bool = False,
+    max_loop_iterations: int = 3,
 ) -> list[WorkerResult]:
     server_task: asyncio.Task[None] | None = None
     if board_port is not None:
@@ -623,6 +733,7 @@ async def _run_with_board(
             role_names=role_names,
             timeout_seconds=timeout_seconds,
             warm_start=warm_start,
+            max_loop_iterations=max_loop_iterations,
         )
     except BaseException:
         if server_task is not None:
@@ -654,6 +765,7 @@ def run_workflow_command(
     warm_start: bool = True,
     board_port: int | None = None,
     open_browser: bool = False,
+    max_loop_iterations: int = 3,
 ) -> int:
     if role_names is None:
         from vibe.workflow.init_flow import load_team_config
@@ -675,6 +787,7 @@ def run_workflow_command(
                 warm_start=warm_start,
                 board_port=board_port,
                 open_browser=open_browser,
+                max_loop_iterations=max_loop_iterations,
             )
         )
     except KeyboardInterrupt:
