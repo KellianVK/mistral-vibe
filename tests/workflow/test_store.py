@@ -140,3 +140,43 @@ def test_read_board_state_wire_shape(db: Path) -> None:
     assert state["questions"][0]["to"] == "Backend"
     assert state["claims"][0]["path"] == "app.py"
     assert state["timings"] == {}
+
+
+def test_message_inbox_lifecycle(db: Path) -> None:
+    store.send_message(db, "QA", "Backend", "add() returns a-b, not a+b")
+    store.send_message(db, "QA", "Frontend", "button label typo")
+    store.broadcast(db, "Planner", "plan is up")
+
+    inbox = store.read_inbox(db, "Backend")
+    assert [m["content"] for m in inbox] == ["add() returns a-b, not a+b"]
+    # Delivery marks read: a second read is empty.
+    assert store.read_inbox(db, "Backend") == []
+    # Frontend's message is untouched.
+    assert len(store.read_inbox(db, "Frontend", mark_read=False)) == 1
+
+    all_messages = store.read_messages(db)
+    assert [m["read"] for m in all_messages] == [True, False]
+    assert [b["from_role"] for b in store.read_broadcasts(db)] == ["Planner"]
+
+
+def test_changes_feed(db: Path) -> None:
+    store.record_change(db, "Backend", "server/app.py", "created")
+    store.record_change(db, "Backend", "server/app.py", "modified")
+    changes = store.read_changes(db)
+    assert [(c["path"], c["action"]) for c in changes] == [
+        ("server/app.py", "created"),
+        ("server/app.py", "modified"),
+    ]
+
+
+def test_start_run_wipes_messages_and_changes(db: Path) -> None:
+    store.send_message(db, "A", "B", "hello")
+    store.broadcast(db, "A", "hi all")
+    store.record_change(db, "A", "x.py", "created")
+    store.start_run(db, "fresh")
+    assert store.read_messages(db) == []
+    assert store.read_broadcasts(db) == []
+    assert store.read_changes(db) == []
+    state = store.read_board_state(db)
+    assert state["messages"] == [] and state["broadcasts"] == []
+    assert state["changes"] == []

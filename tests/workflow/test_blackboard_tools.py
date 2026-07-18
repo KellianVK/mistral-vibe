@@ -167,3 +167,45 @@ async def test_question_roundtrip_between_roles(
     status = read_status(db, "Frontend")
     assert status is not None and status["state"] == "working"
     assert read_questions(db, open_only=True) == []
+
+
+@pytest.mark.asyncio
+async def test_messaging_tools_roundtrip(
+    db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vibe.workflow.store import read_messages
+
+    monkeypatch.setenv(WORKFLOW_ROLE_ENV, "QA")
+    ack = await invoke(
+        make(blackboard.SendMessage),
+        blackboard.SendMessageArgs(target_role="Backend", content="found a bug"),
+    )
+    assert isinstance(ack, blackboard.BlackboardAck) and ack.ok
+    ack = await invoke(
+        make(blackboard.Broadcast), blackboard.BroadcastArgs(content="suite is red")
+    )
+    assert isinstance(ack, blackboard.BlackboardAck) and ack.ok
+
+    monkeypatch.setenv(WORKFLOW_ROLE_ENV, "Backend")
+    inbox = await invoke(make(blackboard.ReadInbox), blackboard.ReadInboxArgs())
+    assert isinstance(inbox, blackboard.ReadInboxResult)
+    assert inbox.count == 1
+    assert inbox.messages[0].content == "found a bug"
+    assert [b.content for b in inbox.broadcasts] == ["suite is red"]
+    assert all(m["read"] for m in read_messages(db) if m["to_role"] == "Backend")
+
+    # Own broadcasts are filtered from your inbox view.
+    monkeypatch.setenv(WORKFLOW_ROLE_ENV, "QA")
+    inbox = await invoke(make(blackboard.ReadInbox), blackboard.ReadInboxArgs())
+    assert isinstance(inbox, blackboard.ReadInboxResult)
+    assert inbox.broadcasts == []
+
+
+def test_messaging_tools_gated_like_the_rest(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(WORKFLOW_DB_ENV, raising=False)
+    for tool_class in (
+        blackboard.SendMessage,
+        blackboard.Broadcast,
+        blackboard.ReadInbox,
+    ):
+        assert tool_class.is_available() is False

@@ -27,7 +27,9 @@ role argument. Follow this protocol exactly:
    (e.g. Flask's `app.test_client()`); NEVER launch a real server, use
    `nohup`, or background a process with `&`. When resetting module-level
    state in tests, mutate it through the imported module object.
-5. Call `publish_decision` for every significant finding and one final
+5. Use `send_message` to tell the owning role about each bug you find
+   (they see it in their inbox) and `broadcast` when the suite goes
+   green or red. Call `publish_decision` for every significant finding and one final
    verdict decision with topic `qa-verdict`: summary starting `PASS:` or
    `FAIL:`, with commands and results in `artifact`.
 6. Finish with `update_status` state `done` (or `blocked` with the reason if

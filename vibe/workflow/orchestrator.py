@@ -29,8 +29,10 @@ from vibe.workflow.setup import (
 )
 from vibe.workflow.store import (
     initialize_database,
+    read_claims,
     read_decisions,
     read_status,
+    record_change,
     record_event,
     start_run,
     update_status,
@@ -104,6 +106,51 @@ def _file_map(workdir: Path) -> list[str]:
             if len(entries) >= BRIEF_FILE_MAP_LIMIT:
                 return entries
     return entries
+
+
+def _snapshot_files(workdir: Path) -> dict[str, tuple[float, int]]:
+    """Path -> (mtime, size) map used to detect what a worker touched."""
+    snapshot: dict[str, tuple[float, int]] = {}
+    for current_root, dirnames, filenames in os.walk(workdir):
+        dirnames[:] = [d for d in dirnames if d not in _SKIPPED_DIRS]
+        relative_root = Path(current_root).relative_to(workdir)
+        for filename in filenames:
+            if filename.startswith("."):
+                continue
+            full = Path(current_root) / filename
+            try:
+                stat = full.stat()
+            except OSError:
+                continue
+            snapshot[str(relative_root / filename)] = (stat.st_mtime, stat.st_size)
+    return snapshot
+
+
+def _record_file_changes(
+    database_path: Path,
+    role: str,
+    before: dict[str, tuple[float, int]],
+    after: dict[str, tuple[float, int]],
+) -> None:
+    """Diff two snapshots into the changes feed, attributed via file claims.
+
+    Waves run workers in parallel over one workdir, so a path claimed by a
+    different role is skipped here — that role's own diff reports it.
+    """
+    claims = {claim["path"]: claim["role"] for claim in read_claims(database_path)}
+    for path_str, fingerprint in after.items():
+        holder = claims.get(path_str)
+        if holder is not None and holder != role:
+            continue
+        if path_str not in before:
+            record_change(database_path, role, path_str, "created")
+        elif before[path_str] != fingerprint:
+            record_change(database_path, role, path_str, "modified")
+    for path_str in before:
+        if path_str not in after:
+            holder = claims.get(path_str)
+            if holder is None or holder == role:
+                record_change(database_path, role, path_str, "deleted")
 
 
 def _decisions_digest(database_path: Path) -> str:
@@ -394,6 +441,7 @@ async def run_worker(
     except (OSError, WorkflowRunError) as error:
         return await _blocked_worker(database_path, role.name, str(error))
 
+    files_before = await asyncio.to_thread(_snapshot_files, workdir)
     await asyncio.to_thread(record_event, database_path, role.name, "spawned")
     try:
         remaining = deadline - loop.time()
@@ -405,9 +453,14 @@ async def run_worker(
             database_path, role.name, str(error), timed_out=error.timed_out
         )
 
-    return await _monitor_worker(
+    result = await _monitor_worker(
         running, role.name, database_path, deadline, json_log, stderr_log
     )
+    files_after = await asyncio.to_thread(_snapshot_files, workdir)
+    await asyncio.to_thread(
+        _record_file_changes, database_path, role.name, files_before, files_after
+    )
+    return result
 
 
 async def run_workflow(

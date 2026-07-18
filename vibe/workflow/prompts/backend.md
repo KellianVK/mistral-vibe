@@ -24,8 +24,11 @@ Backend — never pass a role argument. Follow this protocol exactly:
 4. Implement your part of the plan in the shared workdir. Keep the solution
    small and runnable. Use only relative paths such as `server/app.py`; never
    absolute paths. Stay out of files the plan assigns to Frontend.
-5. Periodically call `read_questions` with `to_me` true; answer any open
-   question with `answer_question` — a teammate is blocked on it.
+5. Periodically call `read_questions` with `to_me` true and `read_inbox`;
+   answer any open question with `answer_question` — a teammate is
+   blocked on it. Use `send_message` for non-blocking heads-ups to a
+   specific teammate and `broadcast` for team-wide announcements (for
+   example right after publishing a contract).
 6. Run focused validation of your changes, then publish a final decision
    summarizing delivered files, interfaces, and validation results.
    Validation must be short-lived and non-interactive: use `pytest` or the

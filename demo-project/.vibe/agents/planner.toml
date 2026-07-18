@@ -1,0 +1,5 @@
+# Managed by vibe workflow (MiaouFlow).
+display_name = "Planner"
+description = "MiaouFlow Planner agent"
+active_model = "mistral-medium-3.5"
+bypass_tool_permissions = true

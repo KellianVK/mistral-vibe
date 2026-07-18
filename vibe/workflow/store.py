@@ -60,6 +60,30 @@ class RunRecord(TypedDict):
     started_at: str
 
 
+class MessageRecord(TypedDict):
+    id: int
+    ts: str
+    from_role: str
+    to_role: str
+    content: str
+    read: bool
+
+
+class BroadcastRecord(TypedDict):
+    id: int
+    ts: str
+    from_role: str
+    content: str
+
+
+class ChangeRecord(TypedDict):
+    id: int
+    ts: str
+    role: str
+    path: str
+    action: str
+
+
 class RoleTiming(TypedDict):
     spawned_at: str | None
     first_action_s: float | None
@@ -121,6 +145,33 @@ _SCHEMAS = (
         payload TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        from_role TEXT NOT NULL,
+        to_role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        read INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS broadcasts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        from_role TEXT NOT NULL,
+        content TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS changes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        role TEXT NOT NULL,
+        path TEXT NOT NULL,
+        action TEXT NOT NULL
+    )
+    """,
 )
 
 _initialized_databases: set[Path] = set()
@@ -152,7 +203,17 @@ def start_run(db_path: DatabasePath, goal: str) -> int:
     """Reset the board and open a fresh run so back-to-back demos start clean."""
     path = _ready_database(db_path)
     with closing(_open_connection(path)) as connection, connection:
-        for table in ("decisions", "status", "questions", "claims", "events"):
+        wiped = (
+            "decisions",
+            "status",
+            "questions",
+            "claims",
+            "events",
+            "messages",
+            "broadcasts",
+            "changes",
+        )
+        for table in wiped:
             connection.execute(f"DELETE FROM {table}")
         cursor = connection.execute(
             "INSERT INTO runs (goal, started_at) VALUES (?, ?)", (goal, _utc_now())
@@ -416,6 +477,130 @@ def read_claims(db_path: DatabasePath) -> list[ClaimRecord]:
     ]
 
 
+def send_message(
+    db_path: DatabasePath, from_role: str, to_role: str, content: str
+) -> int:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection, connection:
+        cursor = connection.execute(
+            "INSERT INTO messages (ts, from_role, to_role, content)"
+            " VALUES (?, ?, ?, ?)",
+            (_utc_now(), from_role, to_role, content),
+        )
+        message_id = cursor.lastrowid
+    if message_id is None:
+        raise RuntimeError("SQLite did not return an id for the message")
+    return message_id
+
+
+def broadcast(db_path: DatabasePath, from_role: str, content: str) -> int:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection, connection:
+        cursor = connection.execute(
+            "INSERT INTO broadcasts (ts, from_role, content) VALUES (?, ?, ?)",
+            (_utc_now(), from_role, content),
+        )
+        broadcast_id = cursor.lastrowid
+    if broadcast_id is None:
+        raise RuntimeError("SQLite did not return an id for the broadcast")
+    return broadcast_id
+
+
+def read_inbox(
+    db_path: DatabasePath, role: str, mark_read: bool = True
+) -> list[MessageRecord]:
+    """Unread direct messages for a role, marked read on delivery."""
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection, connection:
+        rows = connection.execute(
+            "SELECT id, ts, from_role, to_role, content, read FROM messages"
+            " WHERE to_role = ? AND read = 0 ORDER BY id ASC",
+            (role,),
+        ).fetchall()
+        records = [
+            MessageRecord(
+                id=row["id"],
+                ts=row["ts"],
+                from_role=row["from_role"],
+                to_role=row["to_role"],
+                content=row["content"],
+                read=bool(row["read"]),
+            )
+            for row in rows
+        ]
+        if mark_read and records:
+            ids = [record["id"] for record in records]
+            placeholders = ", ".join("?" for _ in ids)
+            connection.execute(
+                f"UPDATE messages SET read = 1 WHERE id IN ({placeholders})", ids
+            )
+    return records
+
+
+def read_messages(db_path: DatabasePath) -> list[MessageRecord]:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection:
+        rows = connection.execute(
+            "SELECT id, ts, from_role, to_role, content, read FROM messages"
+            " ORDER BY id ASC"
+        ).fetchall()
+    return [
+        MessageRecord(
+            id=row["id"],
+            ts=row["ts"],
+            from_role=row["from_role"],
+            to_role=row["to_role"],
+            content=row["content"],
+            read=bool(row["read"]),
+        )
+        for row in rows
+    ]
+
+
+def read_broadcasts(db_path: DatabasePath) -> list[BroadcastRecord]:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection:
+        rows = connection.execute(
+            "SELECT id, ts, from_role, content FROM broadcasts ORDER BY id ASC"
+        ).fetchall()
+    return [
+        BroadcastRecord(
+            id=row["id"],
+            ts=row["ts"],
+            from_role=row["from_role"],
+            content=row["content"],
+        )
+        for row in rows
+    ]
+
+
+def record_change(db_path: DatabasePath, role: str, path_str: str, action: str) -> None:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection, connection:
+        connection.execute(
+            "INSERT INTO changes (ts, role, path, action) VALUES (?, ?, ?, ?)",
+            (_utc_now(), role, path_str, action),
+        )
+
+
+def read_changes(db_path: DatabasePath) -> list[ChangeRecord]:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection:
+        rows = connection.execute(
+            "SELECT id, ts, role, path, action FROM changes ORDER BY id ASC"
+        ).fetchall()
+    return [
+        ChangeRecord(
+            id=row["id"],
+            ts=row["ts"],
+            role=row["role"],
+            path=row["path"],
+            action=row["action"],
+        )
+        for row in rows
+    ]
+
+
 def record_event(
     db_path: DatabasePath, role: str, kind: str, payload: str | None = None
 ) -> None:
@@ -515,6 +700,36 @@ def read_board_state(db_path: DatabasePath) -> dict[str, Any]:
         {"path": claim["path"], "role": claim["role"], "ts": claim["ts"]}
         for claim in read_claims(db_path)
     ]
+    messages = [
+        {
+            "id": message["id"],
+            "ts": message["ts"],
+            "from": message["from_role"],
+            "to": message["to_role"],
+            "content": message["content"],
+            "read": message["read"],
+        }
+        for message in read_messages(db_path)
+    ]
+    broadcasts_payload = [
+        {
+            "id": item["id"],
+            "ts": item["ts"],
+            "from": item["from_role"],
+            "content": item["content"],
+        }
+        for item in read_broadcasts(db_path)
+    ]
+    changes = [
+        {
+            "id": change["id"],
+            "ts": change["ts"],
+            "role": change["role"],
+            "path": change["path"],
+            "action": change["action"],
+        }
+        for change in read_changes(db_path)
+    ]
     return {
         "goal": run["goal"] if run is not None else None,
         "run": run,
@@ -522,6 +737,9 @@ def read_board_state(db_path: DatabasePath) -> dict[str, Any]:
         "decisions": decisions,
         "questions": questions,
         "claims": claims,
+        "messages": messages,
+        "broadcasts": broadcasts_payload,
+        "changes": changes,
         "timings": compute_timings(db_path),
     }
 
