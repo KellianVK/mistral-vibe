@@ -45,6 +45,30 @@ export interface RunInfo {
   started_at: string;
 }
 
+export interface TeamMessage {
+  id: number;
+  ts: string;
+  from: string;
+  to: string;
+  content: string;
+  read: boolean;
+}
+
+export interface TeamBroadcast {
+  id: number;
+  ts: string;
+  from: string;
+  content: string;
+}
+
+export interface FileChange {
+  id: number;
+  ts: string;
+  role: string;
+  path: string;
+  action: "created" | "modified" | "deleted";
+}
+
 export interface BlackboardState {
   goal?: string | null;
   run?: RunInfo | null;
@@ -52,7 +76,17 @@ export interface BlackboardState {
   decisions: Decision[];
   questions: Question[];
   claims: FileClaim[];
+  messages?: TeamMessage[];
+  broadcasts?: TeamBroadcast[];
+  changes?: FileChange[];
   timings?: Record<string, RoleTiming>;
+}
+
+export interface LogEntry {
+  role: string;
+  content: string;
+  tools: string[];
+  tool_name: string | null;
 }
 
 export interface RoleSpec {

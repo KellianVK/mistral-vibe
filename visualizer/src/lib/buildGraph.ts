@@ -103,5 +103,25 @@ export function buildGraph(
     }
   }
 
+  // A message in flight draws its own animated edge between the two roles —
+  // peers usually have no dependency edge. It disappears once read (pure:
+  // derived from state only, no clock).
+  const structural = new Set(edges.map((e) => e.id));
+  for (const message of state.messages ?? []) {
+    if (message.read) continue;
+    if (!roleNames.has(message.from) || !roleNames.has(message.to)) continue;
+    const id = `msg:${message.from}->${message.to}`;
+    if (structural.has(id)) continue;
+    structural.add(id);
+    edges.push({
+      id,
+      source: message.from,
+      target: message.to,
+      animated: true,
+      className: "team-edge team-edge--message",
+      label: "message",
+    });
+  }
+
   return { nodes, edges };
 }
