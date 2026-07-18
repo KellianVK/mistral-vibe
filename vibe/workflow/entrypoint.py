@@ -20,6 +20,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    init_parser = subparsers.add_parser(
+        "init",
+        help=(
+            "Conversational setup: compose a 6-8 agent team (scan-driven on an "
+            "existing project), then run with the live board automatically"
+        ),
+    )
+    init_parser.add_argument("--workdir", type=Path, default=Path.cwd())
+    init_parser.add_argument(
+        "--goal", default=None, help="Skip the goal question (useful for scripts)"
+    )
+    init_parser.add_argument(
+        "--no-auto-run",
+        action="store_true",
+        help="Provision the team and stop instead of launching run + board",
+    )
+    init_parser.add_argument("--port", type=int, default=DEFAULT_BOARD_PORT)
+
     run_parser = subparsers.add_parser(
         "run", help="Run a workflow: planner first, then implementers in parallel"
     )
@@ -93,6 +111,20 @@ def _run_status(workdir: Path) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "init":
+        from vibe.workflow.init_flow import run_init
+
+        try:
+            return run_init(
+                args.workdir,
+                auto_run=not args.no_auto_run,
+                board_port=args.port,
+                goal_override=args.goal,
+            )
+        except RuntimeError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
 
     if args.command == "status":
         return _run_status(args.workdir)

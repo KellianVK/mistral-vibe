@@ -55,3 +55,56 @@ def test_configure_workdir_requires_existing_directory(tmp_path: Path) -> None:
 
 def test_database_lives_inside_vibe_dir(tmp_path: Path) -> None:
     assert workflow_database_path(tmp_path) == tmp_path / ".vibe" / "workflow.db"
+
+
+def test_scanner_detects_project_shape(tmp_path: Path) -> None:
+    from vibe.workflow.scanner import scan_project
+
+    empty = scan_project(tmp_path)
+    assert empty.is_empty
+
+    (tmp_path / "app.py").write_text("import flask\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("flask\npytest\n", encoding="utf-8")
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "index.html").write_text("<html>", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text("def test(): pass", encoding="utf-8")
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / "README.md").write_text("# hi", encoding="utf-8")
+
+    scan = scan_project(tmp_path)
+    assert not scan.is_empty
+    assert "Python" in scan.languages
+    assert "flask" in scan.frameworks
+    assert scan.has_frontend and scan.has_tests and scan.has_ci and scan.has_docs
+    assert "Python" in scan.summary()
+
+
+def test_init_noninteractive_with_goal_provisions_team(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from vibe.workflow.init_flow import load_team_config, run_init
+
+    # Non-empty project with frontend + CI -> scan-driven team, no questions
+    # except confirmations, which we answer via stdin monkeypatching.
+    (tmp_path / "app.py").write_text("import flask\n", encoding="utf-8")
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "index.html").write_text("<html>", encoding="utf-8")
+    answers = iter(["", "n"])  # accept proposed team; standard quality
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    exit_code = run_init(
+        tmp_path, auto_run=False, board_port=8787, goal_override="Ship v1"
+    )
+
+    assert exit_code == 0
+    config = load_team_config(tmp_path)
+    assert config is not None
+    assert config["goal_default"] == "Ship v1"
+    roles = config["roles"]
+    assert isinstance(roles, list) and "Frontend" in roles and "Reviewer" in roles
+    # Agent profiles were provisioned for the whole team.
+    profiles = {p.stem for p in (tmp_path / ".vibe" / "agents").glob("*.toml")}
+    assert {"planner", "reviewer", "frontend", "security"} <= profiles
+    out = capsys.readouterr().out
+    assert "Team of" in out

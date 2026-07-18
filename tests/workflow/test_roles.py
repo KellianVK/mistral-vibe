@@ -46,3 +46,32 @@ def test_execution_waves_detect_cycles() -> None:
     )
     with pytest.raises(roles.RoleSelectionError, match="Circular"):
         roles.execution_waves([a, b])
+
+
+def test_full_team_composition_rules(tmp_path):
+    from vibe.workflow.init_flow import compose_team
+    from vibe.workflow.scanner import ProjectScan
+
+    minimal = compose_team(wants_frontend=False, wants_devops=False)
+    assert minimal == ["Planner", "Reviewer", "Backend", "QA", "Security", "Docs"]
+    assert len(minimal) == 6
+
+    full = compose_team(wants_frontend=True, wants_devops=True)
+    assert "Frontend" in full and "DevOps" in full
+    assert len(full) == 8
+
+    scan = ProjectScan(file_count=10, has_frontend=True, has_ci=True)
+    from_scan = compose_team(wants_frontend=False, wants_devops=False, scan=scan)
+    assert "Frontend" in from_scan and "DevOps" in from_scan
+
+
+def test_full_team_waves_are_consistent():
+    selected = roles.select_roles(
+        ["Planner", "Reviewer", "Backend", "Frontend", "QA", "Security", "Docs", "DevOps"]
+    )
+    waves = roles.execution_waves(selected)
+    names = [[r.name for r in wave] for wave in waves]
+    assert names[0] == ["Planner"]
+    assert set(names[1]) == {"Backend", "Frontend"}
+    assert set(names[2]) == {"QA", "Security", "Docs", "DevOps"}
+    assert names[3] == ["Reviewer"]

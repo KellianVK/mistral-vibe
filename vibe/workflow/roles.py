@@ -60,9 +60,68 @@ DEFAULT_ROLES: tuple[RoleSpec, ...] = (
         ),
         depends_on=("Planner", "Backend", "Frontend"),
     ),
+    RoleSpec(
+        name="Security",
+        agent_profile="security",
+        model=CODER_MODEL,
+        objective=(
+            "Audit the implementation for security flaws: injection, missing "
+            "input validation, weak secrets/JWT handling, auth bypasses. Do not "
+            "rewrite code — send_message each finding to the owning role and "
+            "publish one security-verdict decision summarizing the audit."
+        ),
+        depends_on=("Planner", "Backend"),
+        max_turns=25,
+    ),
+    RoleSpec(
+        name="DevOps",
+        agent_profile="devops",
+        model=CODER_MODEL,
+        objective=(
+            "Prepare the run/deploy story from what the team built: a run "
+            "command, dependency check, and a minimal CI config if the project "
+            "has none. Do not change application logic."
+        ),
+        depends_on=("Planner", "Backend"),
+        max_turns=25,
+    ),
+    RoleSpec(
+        name="Docs",
+        agent_profile="docs",
+        model=CODER_MODEL,
+        objective=(
+            "Write or update the project README from the published decisions "
+            "and delivered files: what it is, how to run it, the API surface. "
+            "Do not change application code."
+        ),
+        depends_on=("Planner", "Backend", "Frontend"),
+        max_turns=20,
+    ),
+    RoleSpec(
+        name="Reviewer",
+        agent_profile="reviewer",
+        model=PLANNER_MODEL,
+        objective=(
+            "Review the delivered code and every published verdict (QA, "
+            "Security) for correctness and quality. Do not rewrite code. "
+            "Publish one final decision with topic review-verdict whose "
+            "summary starts with exactly GO: or NO-GO: and the reasons."
+        ),
+        depends_on=("QA", "Security", "Docs"),
+        max_turns=20,
+    ),
 )
 
 DEFAULT_ACTIVE_ROLES: tuple[str, ...] = ("Planner", "Backend", "Frontend")
+
+FULL_TEAM_BASE: tuple[str, ...] = (
+    "Planner",
+    "Reviewer",
+    "Backend",
+    "QA",
+    "Security",
+    "Docs",
+)
 
 
 class RoleSelectionError(ValueError):

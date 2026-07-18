@@ -541,6 +541,7 @@ async def _run_with_board(
     timeout_seconds: float | None,
     warm_start: bool,
     board_port: int | None,
+    open_browser: bool = False,
 ) -> list[WorkerResult]:
     server_task: asyncio.Task[None] | None = None
     if board_port is not None:
@@ -551,7 +552,12 @@ async def _run_with_board(
 
             server_task = asyncio.create_task(serve_async(workdir, board_port))
             await asyncio.sleep(0.2)
-        print(f"MiaouFlow board: http://127.0.0.1:{board_port}")
+        board_url = f"http://127.0.0.1:{board_port}"
+        print(f"MiaouFlow board: {board_url}")
+        if open_browser:
+            import webbrowser
+
+            await asyncio.to_thread(webbrowser.open, board_url)
 
     try:
         results = await run_workflow(
@@ -590,7 +596,18 @@ def run_workflow_command(
     timeout_seconds: float | None = None,
     warm_start: bool = True,
     board_port: int | None = None,
+    open_browser: bool = False,
 ) -> int:
+    if role_names is None:
+        from vibe.workflow.init_flow import load_team_config
+
+        team_config = load_team_config(workdir)
+        if team_config is not None:
+            configured = team_config.get("roles")
+            if isinstance(configured, list) and configured:
+                role_names = [str(name) for name in configured]
+                print(f"Using the init team: {', '.join(role_names)}")
+
     try:
         results = asyncio.run(
             _run_with_board(
@@ -600,6 +617,7 @@ def run_workflow_command(
                 timeout_seconds=timeout_seconds,
                 warm_start=warm_start,
                 board_port=board_port,
+                open_browser=open_browser,
             )
         )
     except KeyboardInterrupt:
