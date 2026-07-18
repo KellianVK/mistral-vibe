@@ -13,6 +13,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+import difflib
 import json
 import os
 from pathlib import Path
@@ -108,9 +109,25 @@ def _file_map(workdir: Path) -> list[str]:
     return entries
 
 
-def _snapshot_files(workdir: Path) -> dict[str, tuple[float, int]]:
-    """Path -> (mtime, size) map used to detect what a worker touched."""
-    snapshot: dict[str, tuple[float, int]] = {}
+DIFF_MAX_FILE_BYTES = 64 * 1024
+DIFF_MAX_CHARS = 20_000
+
+
+def _read_text_for_diff(full: Path, size: int) -> str | None:
+    if size > DIFF_MAX_FILE_BYTES:
+        return None
+    try:
+        return full.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _snapshot_files(workdir: Path) -> dict[str, tuple[float, int, str | None]]:
+    """Path -> (mtime, size, text content) used to diff what a worker touched.
+
+    Content is captured only for small utf-8 files so diffs stay cheap.
+    """
+    snapshot: dict[str, tuple[float, int, str | None]] = {}
     for current_root, dirnames, filenames in os.walk(workdir):
         dirnames[:] = [d for d in dirnames if d not in _SKIPPED_DIRS]
         relative_root = Path(current_root).relative_to(workdir)
@@ -122,15 +139,37 @@ def _snapshot_files(workdir: Path) -> dict[str, tuple[float, int]]:
                 stat = full.stat()
             except OSError:
                 continue
-            snapshot[str(relative_root / filename)] = (stat.st_mtime, stat.st_size)
+            content = _read_text_for_diff(full, stat.st_size)
+            snapshot[str(relative_root / filename)] = (
+                stat.st_mtime,
+                stat.st_size,
+                content,
+            )
     return snapshot
+
+
+def _unified_diff(path_str: str, before: str | None, after: str | None) -> str | None:
+    if before is None and after is None:
+        return None
+    diff_lines = difflib.unified_diff(
+        (before or "").splitlines(keepends=True),
+        (after or "").splitlines(keepends=True),
+        fromfile=f"a/{path_str}",
+        tofile=f"b/{path_str}",
+    )
+    diff = "".join(diff_lines)
+    if not diff:
+        return None
+    if len(diff) > DIFF_MAX_CHARS:
+        diff = diff[:DIFF_MAX_CHARS] + "\n… (diff truncated)\n"
+    return diff
 
 
 def _record_file_changes(
     database_path: Path,
     role: str,
-    before: dict[str, tuple[float, int]],
-    after: dict[str, tuple[float, int]],
+    before: dict[str, tuple[float, int, str | None]],
+    after: dict[str, tuple[float, int, str | None]],
 ) -> None:
     """Diff two snapshots into the changes feed, attributed via file claims.
 
@@ -138,19 +177,37 @@ def _record_file_changes(
     different role is skipped here — that role's own diff reports it.
     """
     claims = {claim["path"]: claim["role"] for claim in read_claims(database_path)}
-    for path_str, fingerprint in after.items():
+    for path_str, (mtime, size, content) in after.items():
         holder = claims.get(path_str)
         if holder is not None and holder != role:
             continue
         if path_str not in before:
-            record_change(database_path, role, path_str, "created")
-        elif before[path_str] != fingerprint:
-            record_change(database_path, role, path_str, "modified")
-    for path_str in before:
+            record_change(
+                database_path,
+                role,
+                path_str,
+                "created",
+                _unified_diff(path_str, None, content),
+            )
+        elif (before[path_str][0], before[path_str][1]) != (mtime, size):
+            record_change(
+                database_path,
+                role,
+                path_str,
+                "modified",
+                _unified_diff(path_str, before[path_str][2], content),
+            )
+    for path_str, (_, _, old_content) in before.items():
         if path_str not in after:
             holder = claims.get(path_str)
             if holder is None or holder == role:
-                record_change(database_path, role, path_str, "deleted")
+                record_change(
+                    database_path,
+                    role,
+                    path_str,
+                    "deleted",
+                    _unified_diff(path_str, old_content, None),
+                )
 
 
 def _decisions_digest(database_path: Path) -> str:

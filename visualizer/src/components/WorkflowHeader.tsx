@@ -1,3 +1,4 @@
+import { useState } from "react";
 import miaouLogo from "../assets/miaou.svg";
 import type { BlackboardState, ConnectionState, Manifest } from "../types";
 
@@ -42,10 +43,12 @@ export function WorkflowHeader({
   state: BlackboardState;
   connection: ConnectionState;
 }) {
+  const [goalExpanded, setGoalExpanded] = useState(false);
   const roles = manifest.roles.map((r) => r.name);
   const doneCount = roles.filter((r) => state.agents[r]?.status === "done").length;
   const runStatus = computeRunStatus(manifest, state);
   const wallClock = teamWallClock(state);
+  const goal = manifest.project?.goal ?? "No workflow running";
 
   return (
     <header className="workflow-header">
@@ -55,7 +58,13 @@ export function WorkflowHeader({
           <span className="workflow-header__name">MiaouFlow</span>
           <span className="workflow-header__by">vibe workflow</span>
         </span>
-        <h1 className="workflow-header__goal">{manifest.project?.goal ?? "No workflow running"}</h1>
+        <h1
+          className={`workflow-header__goal${goalExpanded ? " workflow-header__goal--expanded" : ""}`}
+          title={goalExpanded ? "Click to collapse" : goal}
+          onClick={() => setGoalExpanded((v) => !v)}
+        >
+          {goal}
+        </h1>
       </div>
 
       <div className="workflow-header__signals">

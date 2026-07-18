@@ -66,9 +66,16 @@ def test_full_team_composition_rules(tmp_path):
 
 
 def test_full_team_waves_are_consistent():
-    selected = roles.select_roles(
-        ["Planner", "Reviewer", "Backend", "Frontend", "QA", "Security", "Docs", "DevOps"]
-    )
+    selected = roles.select_roles([
+        "Planner",
+        "Reviewer",
+        "Backend",
+        "Frontend",
+        "QA",
+        "Security",
+        "Docs",
+        "DevOps",
+    ])
     waves = roles.execution_waves(selected)
     names = [[r.name for r in wave] for wave in waves]
     assert names[0] == ["Planner"]

@@ -470,21 +470,28 @@ def test_record_file_changes_attributes_via_claims(tmp_path: Path) -> None:
     initialize_database(database_path)
     claim_file(database_path, "Frontend", "web/index.html")
 
-    before = {"server/app.py": (1.0, 10), "old.txt": (1.0, 5)}
-    after = {
-        "server/app.py": (2.0, 30),
-        "web/index.html": (2.0, 40),
-        "server/auth.py": (2.0, 20),
+    before: dict[str, tuple[float, int, str | None]] = {
+        "server/app.py": (1.0, 10, "a = 1\n"),
+        "old.txt": (1.0, 5, "bye\n"),
+    }
+    after: dict[str, tuple[float, int, str | None]] = {
+        "server/app.py": (2.0, 30, "a = 2\n"),
+        "web/index.html": (2.0, 40, "<html>\n"),
+        "server/auth.py": (2.0, 20, "auth\n"),
     }
     orchestrator._record_file_changes(database_path, "Backend", before, after)
 
-    changes = {(c["path"], c["action"]) for c in read_changes(database_path)}
+    recorded = read_changes(database_path)
+    changes = {(c["path"], c["action"]) for c in recorded}
     # web/index.html is claimed by Frontend -> not attributed to Backend.
     assert changes == {
         ("server/app.py", "modified"),
         ("server/auth.py", "created"),
         ("old.txt", "deleted"),
     }
+    modified = next(c for c in recorded if c["path"] == "server/app.py")
+    assert modified["diff"] is not None
+    assert "-a = 1" in modified["diff"] and "+a = 2" in modified["diff"]
 
 
 def test_snapshot_files_skips_hidden_and_ignored_dirs(tmp_path: Path) -> None:
@@ -495,3 +502,11 @@ def test_snapshot_files_skips_hidden_and_ignored_dirs(tmp_path: Path) -> None:
 
     snapshot = orchestrator._snapshot_files(tmp_path)
     assert set(snapshot) == {"app.py"}
+
+
+def test_unified_diff_generation() -> None:
+    diff = orchestrator._unified_diff("app.py", "a = 1\n", "a = 2\n")
+    assert diff is not None
+    assert "-a = 1" in diff and "+a = 2" in diff
+    assert orchestrator._unified_diff("x", None, None) is None
+    assert orchestrator._unified_diff("x", "same\n", "same\n") is None

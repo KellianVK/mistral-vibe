@@ -7,7 +7,15 @@ import { AgentNode } from "./AgentNode";
 
 const nodeTypes = { agent: AgentNode };
 
-export function TeamCanvas({ manifest, state }: { manifest: Manifest; state: BlackboardState }) {
+export function TeamCanvas({
+  manifest,
+  state,
+  onSelectRole,
+}: {
+  manifest: Manifest;
+  state: BlackboardState;
+  onSelectRole?: (role: string) => void;
+}) {
   // Re-derive on every state change, but buildGraph itself stays pure —
   // same (manifest, state) always yields the same nodes/edges.
   const { nodes, edges } = useMemo(() => buildGraph(manifest, state), [manifest, state]);
@@ -18,12 +26,14 @@ export function TeamCanvas({ manifest, state }: { manifest: Manifest; state: Bla
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
+      fitViewOptions={{ padding: 0.25 }}
       proOptions={{ hideAttribution: true }}
       colorMode="dark"
       nodesDraggable={false}
       nodesConnectable={false}
       minZoom={0.4}
       maxZoom={1.5}
+      onNodeClick={(_event, node) => onSelectRole?.(node.id)}
     >
       <Background color="var(--surface-border)" gap={24} />
       <Controls showInteractive={false} position="bottom-left" />

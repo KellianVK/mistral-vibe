@@ -68,7 +68,9 @@ def test_scanner_detects_project_shape(tmp_path: Path) -> None:
     (tmp_path / "web").mkdir()
     (tmp_path / "web" / "index.html").write_text("<html>", encoding="utf-8")
     (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "test_app.py").write_text("def test(): pass", encoding="utf-8")
+    (tmp_path / "tests" / "test_app.py").write_text(
+        "def test(): pass", encoding="utf-8"
+    )
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / "README.md").write_text("# hi", encoding="utf-8")
 

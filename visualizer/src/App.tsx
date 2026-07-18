@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AddAgentView } from "./components/AddAgentView";
+import { AgentDetail } from "./components/AgentDetail";
 import { ChangesView } from "./components/ChangesView";
 import { ClaimPanel } from "./components/ClaimPanel";
 import { DecisionFeed } from "./components/DecisionFeed";
@@ -19,6 +20,7 @@ type Tab = (typeof TABS)[number];
 function App() {
   const { manifest, state, connection } = useWorkflowState();
   const [tab, setTab] = useState<Tab>("Board");
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
   return (
     <div className="app">
@@ -46,7 +48,21 @@ function App() {
                   <code>vibe workflow run --goal "..."</code> in the target project.
                 </div>
               ) : (
-                <TeamCanvas manifest={manifest} state={state} />
+                <TeamCanvas
+                  manifest={manifest}
+                  state={state}
+                  onSelectRole={(role) =>
+                    setSelectedRole((current) => (current === role ? null : role))
+                  }
+                />
+              )}
+              {selectedRole && (
+                <AgentDetail
+                  role={selectedRole}
+                  manifest={manifest}
+                  state={state}
+                  onClose={() => setSelectedRole(null)}
+                />
               )}
             </div>
 
@@ -66,7 +82,7 @@ function App() {
 
       {tab === "Logs" && <LogsView manifest={manifest} />}
       {tab === "Changes" && <ChangesView changes={state.changes ?? []} />}
-      {tab === "Add agent" && <AddAgentView />}
+      {tab === "Add agent" && <AddAgentView manifest={manifest} />}
       {tab === "System" && <SystemView />}
     </div>
   );

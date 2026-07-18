@@ -82,6 +82,7 @@ class ChangeRecord(TypedDict):
     role: str
     path: str
     action: str
+    diff: str | None
 
 
 class RoleTiming(TypedDict):
@@ -169,7 +170,8 @@ _SCHEMAS = (
         ts TEXT NOT NULL,
         role TEXT NOT NULL,
         path TEXT NOT NULL,
-        action TEXT NOT NULL
+        action TEXT NOT NULL,
+        diff TEXT
     )
     """,
 )
@@ -194,6 +196,12 @@ def initialize_database(db_path: DatabasePath) -> None:
                 raise RuntimeError(f"Could not enable SQLite WAL mode for {path}")
             for schema in _SCHEMAS:
                 connection.execute(schema)
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(changes)").fetchall()
+            }
+            if columns and "diff" not in columns:
+                connection.execute("ALTER TABLE changes ADD COLUMN diff TEXT")
             connection.commit()
 
         _initialized_databases.add(path)
@@ -574,12 +582,18 @@ def read_broadcasts(db_path: DatabasePath) -> list[BroadcastRecord]:
     ]
 
 
-def record_change(db_path: DatabasePath, role: str, path_str: str, action: str) -> None:
+def record_change(
+    db_path: DatabasePath,
+    role: str,
+    path_str: str,
+    action: str,
+    diff: str | None = None,
+) -> None:
     path = _ready_database(db_path)
     with closing(_open_connection(path)) as connection, connection:
         connection.execute(
-            "INSERT INTO changes (ts, role, path, action) VALUES (?, ?, ?, ?)",
-            (_utc_now(), role, path_str, action),
+            "INSERT INTO changes (ts, role, path, action, diff) VALUES (?, ?, ?, ?, ?)",
+            (_utc_now(), role, path_str, action, diff),
         )
 
 
@@ -587,7 +601,7 @@ def read_changes(db_path: DatabasePath) -> list[ChangeRecord]:
     path = _ready_database(db_path)
     with closing(_open_connection(path)) as connection:
         rows = connection.execute(
-            "SELECT id, ts, role, path, action FROM changes ORDER BY id ASC"
+            "SELECT id, ts, role, path, action, diff FROM changes ORDER BY id ASC"
         ).fetchall()
     return [
         ChangeRecord(
@@ -596,9 +610,17 @@ def read_changes(db_path: DatabasePath) -> list[ChangeRecord]:
             role=row["role"],
             path=row["path"],
             action=row["action"],
+            diff=row["diff"],
         )
         for row in rows
     ]
+
+
+def read_change(db_path: DatabasePath, change_id: int) -> ChangeRecord | None:
+    for change in read_changes(db_path):
+        if change["id"] == change_id:
+            return change
+    return None
 
 
 def record_event(
@@ -727,6 +749,7 @@ def read_board_state(db_path: DatabasePath) -> dict[str, Any]:
             "role": change["role"],
             "path": change["path"],
             "action": change["action"],
+            "has_diff": change["diff"] is not None,
         }
         for change in read_changes(db_path)
     ]

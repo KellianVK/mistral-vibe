@@ -125,6 +125,37 @@ def _system_info(workdir: Path) -> dict[str, Any]:
     }
 
 
+def _register_agent(workdir: Path, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    from vibe.workflow.roles import RoleSpec, save_custom_role
+    from vibe.workflow.setup import configure_workdir
+
+    name = str(body.get("name") or "").strip()
+    objective = str(body.get("objective") or "").strip()
+    if not name or not objective:
+        return {"error": "name and objective are required"}, 400
+    role = RoleSpec(
+        name=name,
+        agent_profile="".join(c for c in name.lower() if c.isalnum() or c == "-")
+        or "custom",
+        model=str(body.get("model") or "devstral-small"),
+        objective=objective,
+        depends_on=tuple(body.get("depends_on") or ("Planner",)),
+    )
+    try:
+        save_custom_role(workdir, role)
+        configure_workdir(workdir, [role])
+    except Exception as error:
+        return {"error": str(error)}, 409
+    return (
+        {
+            "ok": True,
+            "role": role.name,
+            "note": "The agent joins the team on the next run.",
+        },
+        201,
+    )
+
+
 def _manifest(workdir: Path) -> dict[str, Any]:
     state = _board_state(workdir)
     run = state.get("run")
@@ -183,47 +214,36 @@ def create_app(workdir: Path) -> Starlette:
         del request
         return JSONResponse(await asyncio.to_thread(_system_info, resolved_workdir))
 
-    async def post_agent(request: Request) -> JSONResponse:
-        from vibe.workflow.roles import RoleSpec, save_custom_role
-        from vibe.workflow.setup import configure_workdir
+    async def get_change(request: Request) -> JSONResponse:
+        from vibe.workflow.store import read_change
 
+        raw_id = request.query_params.get("id", "")
+        if not raw_id.isdigit():
+            return JSONResponse({"error": "numeric id required"}, status_code=400)
+        database_path = workflow_database_path(resolved_workdir)
+        if not database_path.exists():
+            return JSONResponse({"error": "no workflow database"}, status_code=404)
+        change = await asyncio.to_thread(read_change, database_path, int(raw_id))
+        if change is None:
+            return JSONResponse({"error": "unknown change id"}, status_code=404)
+        return JSONResponse(dict(change))
+
+    async def post_agent(request: Request) -> JSONResponse:
         try:
             body = await request.json()
         except json.JSONDecodeError:
             return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-        name = str(body.get("name") or "").strip()
-        objective = str(body.get("objective") or "").strip()
-        if not name or not objective:
-            return JSONResponse(
-                {"error": "name and objective are required"}, status_code=400
-            )
-        role = RoleSpec(
-            name=name,
-            agent_profile="".join(c for c in name.lower() if c.isalnum() or c == "-")
-            or "custom",
-            model=str(body.get("model") or "devstral-small"),
-            objective=objective,
-            depends_on=tuple(body.get("depends_on") or ("Planner",)),
+        payload, status_code = await asyncio.to_thread(
+            _register_agent, resolved_workdir, body
         )
-        try:
-            await asyncio.to_thread(save_custom_role, resolved_workdir, role)
-            await asyncio.to_thread(configure_workdir, resolved_workdir, [role])
-        except Exception as error:
-            return JSONResponse({"error": str(error)}, status_code=409)
-        return JSONResponse(
-            {
-                "ok": True,
-                "role": role.name,
-                "note": "The agent joins the team on the next run.",
-            },
-            status_code=201,
-        )
+        return JSONResponse(payload, status_code=status_code)
 
     routes: list[Route | WebSocketRoute | Mount] = [
         Route("/state", get_state),
         Route("/manifest", get_manifest),
         Route("/logs", get_logs),
         Route("/system", get_system),
+        Route("/change", get_change),
         Route("/agents", post_agent, methods=["POST"]),
         WebSocketRoute("/ws", ws_state),
     ]

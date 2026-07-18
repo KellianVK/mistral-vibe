@@ -180,3 +180,18 @@ def test_start_run_wipes_messages_and_changes(db: Path) -> None:
     state = store.read_board_state(db)
     assert state["messages"] == [] and state["broadcasts"] == []
     assert state["changes"] == []
+
+
+def test_change_diff_roundtrip(db: Path) -> None:
+    store.record_change(
+        db, "Backend", "app.py", "modified", diff="--- a/app.py\n+++ b/app.py\n+x\n"
+    )
+    store.record_change(db, "Backend", "logo.png", "created", diff=None)
+    changes = store.read_changes(db)
+    assert changes[0]["diff"] is not None and "+x" in changes[0]["diff"]
+    assert changes[1]["diff"] is None
+    # /state exposes only a light has_diff flag, never the payload.
+    wire = store.read_board_state(db)["changes"]
+    assert wire[0]["has_diff"] is True and "diff" not in wire[0]
+    assert store.read_change(db, changes[0]["id"]) == changes[0]
+    assert store.read_change(db, 999) is None

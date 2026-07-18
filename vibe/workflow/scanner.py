@@ -25,7 +25,16 @@ _LANGUAGE_EXTENSIONS = {
     ".swift": "Swift",
 }
 _FRONTEND_MARKERS = {".html", ".css", ".tsx", ".jsx", ".vue", ".svelte"}
-_SKIPPED_DIRS = {".git", ".vibe", "node_modules", "__pycache__", ".venv", "logs", "dist", "build"}
+_SKIPPED_DIRS = {
+    ".git",
+    ".vibe",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "logs",
+    "dist",
+    "build",
+}
 _MAX_FILES = 400
 
 
@@ -106,13 +115,19 @@ def scan_project(workdir: Path) -> ProjectScan:
                 languages.add(_LANGUAGE_EXTENSIONS[suffix])
             if suffix in _FRONTEND_MARKERS:
                 scan.has_frontend = True
-            if lower.startswith("test_") or lower.endswith("_test.py") or "tests" in root_parts:
+            if (
+                lower.startswith("test_")
+                or lower.endswith("_test.py")
+                or "tests" in root_parts
+            ):
                 scan.has_tests = True
             if lower.startswith("readme") or "docs" in root_parts:
                 scan.has_docs = True
             if scan.file_count >= _MAX_FILES:
                 break
-        if "workflows" in root_parts and ".github" in {p.lower() for p in relative_root.parts}:
+        if "workflows" in root_parts and ".github" in {
+            p.lower() for p in relative_root.parts
+        }:
             scan.has_ci = True
         if scan.file_count >= _MAX_FILES:
             break

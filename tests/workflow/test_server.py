@@ -155,3 +155,24 @@ def test_post_agent_registers_custom_role(tmp_path: Path) -> None:
     assert "Security" in manifest_names
     # Validation errors are surfaced.
     assert client.post("/agents", json={"name": ""}).status_code == 400
+
+
+def test_change_endpoint_serves_diff(tmp_path: Path) -> None:
+    from vibe.workflow.store import record_change
+
+    workdir = seeded_workdir(tmp_path)
+    record_change(
+        workflow_database_path(workdir),
+        "Backend",
+        "app.py",
+        "modified",
+        diff="--- a/app.py\n+++ b/app.py\n+new\n",
+    )
+    client = TestClient(server.create_app(workdir))
+
+    changes = client.get("/state").json()["changes"]
+    target = next(c for c in changes if c["path"] == "app.py")
+    payload = client.get("/change", params={"id": str(target["id"])}).json()
+    assert "+new" in payload["diff"]
+    assert client.get("/change", params={"id": "abc"}).status_code == 400
+    assert client.get("/change", params={"id": "999"}).status_code == 404
