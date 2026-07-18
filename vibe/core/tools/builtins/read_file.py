@@ -50,7 +50,9 @@ def _display_relative(path: Path, base: Path) -> Path:
 
 
 class ReadFileArgs(BaseModel):
-    file_path: str = Field(description="The absolute path to the file to read")
+    file_path: str = Field(
+        description="File path to read; relative paths resolve from the current workdir"
+    )
     offset: int | None = Field(
         default=None,
         ge=1,

@@ -50,6 +50,14 @@ _SKIPPED_DIRS = {".git", ".vibe", "node_modules", "__pycache__", ".venv", "logs"
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 STOP_EVENT_PATTERN = re.compile(r"<vibe_stop_event>(.*?)</vibe_stop_event>", re.DOTALL)
+WORKDIR_PATH_RULES = """## Workdir path rules
+
+For file tools and blackboard file claims, always pass a path relative to the
+current workdir, such as `game/index.html`. Never pass a drive-letter path or a
+Git Bash/MSYS path such as `/c/Users/...`; file tools do not interpret shell
+path syntax. Shell commands also start in the workdir, so keep their project
+paths relative.
+"""
 
 
 def _read_worker_stop_reason(stderr_log: Path) -> str | None:
@@ -248,13 +256,14 @@ def build_worker_prompt(
         raise WorkflowRunError(f"Missing role prompt: {prompt_path}")
     template = prompt_path.read_text(encoding="utf-8")
     full_brief = f"{brief}{_decisions_digest(database_path)}" if brief else ""
-    return (
+    rendered = (
         template
         .replace("{{GOAL}}", goal)
         .replace("{{BRIEF}}", full_brief)
         .replace("{{ROLE}}", role.name)
         .replace("{{OBJECTIVE}}", role.objective)
     )
+    return f"{rendered.rstrip()}\n\n{WORKDIR_PATH_RULES}"
 
 
 def build_worker_command(prompt: str, role: RoleSpec, workdir: Path) -> list[str]:

@@ -125,6 +125,10 @@ def test_build_worker_prompt_injects_goal_brief_and_decisions(tmp_path: Path) ->
     assert "Todo API" in prompt
     assert "SHARED BRIEF" in prompt
     assert "[plan]: the plan" in prompt
+    normalized_prompt = " ".join(prompt.split())
+    assert "always pass a path relative to the current workdir" in normalized_prompt
+    assert "Never pass a drive-letter path" in normalized_prompt
+    assert "Git Bash/MSYS path such as `/c/Users/...`" in normalized_prompt
     assert "{{GOAL}}" not in prompt and "{{BRIEF}}" not in prompt
 
 

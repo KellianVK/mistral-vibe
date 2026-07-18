@@ -25,7 +25,7 @@ from vibe.core.types import ToolResultEvent, ToolStreamEvent
 
 class WriteFileArgs(BaseModel):
     file_path: str = Field(
-        description="The absolute path to the file to write (must be absolute, not relative)"
+        description="File path to write; relative paths resolve from the current workdir"
     )
     content: str = Field(description="The content to write to the file")
 

@@ -30,7 +30,9 @@ from vibe.core.utils.text import line_contexts
 
 
 class EditArgs(BaseModel):
-    file_path: str = Field(description="The absolute path to the file to modify")
+    file_path: str = Field(
+        description="File path to modify; relative paths resolve from the current workdir"
+    )
     old_string: str = Field(description="The text to replace")
     new_string: str = Field(
         description="The text to replace it with (must be different from old_string)"
