@@ -106,6 +106,14 @@ def test_build_worker_command_uses_role_limits_and_restricted_tools(
         assert "workflow_publish_decision" in command
 
 
+def test_qa_prompt_reuses_existing_tests_and_publishes_one_verdict() -> None:
+    qa_prompt = " ".join(orchestrator.build_worker_prompt("QA", "Build an API").split())
+
+    assert "Run the existing relevant tests first" in qa_prompt
+    assert "acceptance criteria that are not already covered" in qa_prompt
+    assert "Do not publish intermediate or duplicate verdicts" in qa_prompt
+
+
 def test_completed_worker_succeeds_even_with_nonzero_process_exit() -> None:
     result = orchestrator.WorkerResult(role="Planner", return_code=1, completed=True)
 

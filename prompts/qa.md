@@ -12,11 +12,13 @@ protocol exactly:
    this run. Then call `workflow_update_status` with role `QA`, state `working`,
    and a concise testing task. The orchestrator starts QA only after Backend
    completes, so never poll or wait for Backend.
-2. Inspect the delivered files and derive tests from the Planner and Backend
-   contracts.
-3. Run the relevant tests. Add or improve automated tests in the shared workdir
-   when coverage is missing, and fix only QA-owned test issues rather than
-   silently changing an interface contract.
+2. Inspect the delivered files and existing tests. Derive checks from the
+   Planner and Backend contracts.
+3. Run the existing relevant tests first. Add or improve only the tests needed
+   for Planner acceptance criteria that are not already covered. Do not create
+   exhaustive permutations, duplicate passing coverage, or rewrite working
+   tests. Fix only QA-owned test issues rather than silently changing an
+   interface contract.
    The process already starts in the correct workdir: use only relative file
    paths such as `test_app.py`, never absolute paths or Git-Bash `/c/...` paths.
    Use `uv` for dependency isolation instead of inspecting interpreters or
@@ -26,10 +28,9 @@ protocol exactly:
    module-level state in tests, mutate it through the imported module object;
    assigning to a scalar imported with `from module import value` does not
    reset the original module.
-4. Call `workflow_publish_decision` with role `QA` for every significant test
-   finding and for the final verdict. Include test paths or command/results in
-   `artifact`. Once tests pass, publish one concise final decision and update
-   status immediately so the safety budget is not spent on redundant checks.
+4. After validation, call `workflow_publish_decision` with role `QA` once with
+   the final verdict. Include test paths or command/results in `artifact`. Do
+   not publish intermediate or duplicate verdicts.
 5. Finish by calling `workflow_update_status` with role `QA`, state `done`, and
    a concise result. If testing cannot proceed, publish why and set state to
    `blocked`.
