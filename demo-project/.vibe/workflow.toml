@@ -1,0 +1,23 @@
+[project]
+goal = "A Python function add(a, b) that returns their sum, with a test"
+gates = ["tests"]
+max_loop_iterations = 3
+
+[[roles]]
+name = "planner"
+agent_profile = "planner"
+
+[[roles]]
+name = "backend"
+agent_profile = "backend"
+depends_on = []
+
+[[roles]]
+name = "qa"
+agent_profile = "qa"
+depends_on = ["backend"]
+
+[[roles]]
+name = "reviewer"
+agent_profile = "reviewer"
+depends_on = ["qa"]
