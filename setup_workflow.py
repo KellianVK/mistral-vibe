@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from importlib import resources
 import json
 from pathlib import Path
 import tomllib
@@ -10,6 +11,12 @@ from typing import Any
 
 class WorkflowConfigurationError(RuntimeError):
     pass
+
+
+MEMORY_SERVER_NAME = "workflow"
+WORKFLOW_SKILL_NAME = "workflow"
+WORKFLOW_SKILL_MARKER = "<!-- Managed by vibe-workflow. -->"
+WORKFLOW_TOOL_MARKER = "# Managed by vibe-workflow."
 
 
 def workflow_database_path(workdir: Path) -> Path:
@@ -36,7 +43,7 @@ def _workflow_servers(config: dict[str, Any]) -> list[dict[str, Any]]:
     return [server for server in servers if isinstance(server, dict)]
 
 
-def _matches(server: dict[str, Any], database_path: Path) -> bool:
+def _matches_memory_server(server: dict[str, Any], database_path: Path) -> bool:
     env = server.get("env")
     return (
         server.get("transport") == "stdio"
@@ -45,6 +52,71 @@ def _matches(server: dict[str, Any], database_path: Path) -> bool:
         and isinstance(env, dict)
         and env.get("WORKFLOW_DB") == str(database_path)
     )
+
+
+def _has_compatible_server(
+    servers: list[dict[str, Any]],
+    name: str,
+    matches: Callable[[dict[str, Any]], bool],
+    config_path: Path,
+) -> bool:
+    named_servers = [server for server in servers if server.get("name") == name]
+    if not named_servers:
+        return False
+    if len(named_servers) == 1 and matches(named_servers[0]):
+        return True
+    raise WorkflowConfigurationError(
+        f"An incompatible MCP server named {name!r} already exists in {config_path}"
+    )
+
+
+def workflow_skill_path(workdir: Path) -> Path:
+    return (
+        workdir.expanduser().resolve()
+        / ".vibe"
+        / "skills"
+        / WORKFLOW_SKILL_NAME
+        / "SKILL.md"
+    )
+
+
+def workflow_tool_path(workdir: Path) -> Path:
+    return workdir.expanduser().resolve() / ".vibe" / "tools" / "workflow_control.py"
+
+
+def _workflow_skill_content() -> str:
+    return (
+        resources
+        .files("workflow_control")
+        .joinpath("workflow_skill.md")
+        .read_text(encoding="utf-8")
+    )
+
+
+def _workflow_tool_content() -> str:
+    return (
+        resources
+        .files("workflow_control")
+        .joinpath("workflow_tool.py")
+        .read_text(encoding="utf-8")
+    )
+
+
+def _validate_managed_file(
+    path: Path, content: str, marker: str, conflict: str
+) -> None:
+    if not path.exists():
+        return
+    existing = path.read_text(encoding="utf-8")
+    if existing != content and marker not in existing:
+        raise WorkflowConfigurationError(f"{conflict}: {path}")
+
+
+def _write_managed_file(path: Path, content: str) -> None:
+    if path.exists() and path.read_text(encoding="utf-8") == content:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 def configure_workdir(workdir: Path) -> Path:
@@ -58,6 +130,20 @@ def configure_workdir(workdir: Path) -> Path:
     vibe_dir.mkdir(parents=True, exist_ok=True)
     config_path = vibe_dir / "config.toml"
     database_path = workflow_database_path(resolved_workdir)
+    managed_files = [
+        (
+            workflow_skill_path(resolved_workdir),
+            _workflow_skill_content(),
+            WORKFLOW_SKILL_MARKER,
+            f"An incompatible /{WORKFLOW_SKILL_NAME} skill already exists",
+        ),
+        (
+            workflow_tool_path(resolved_workdir),
+            _workflow_tool_content(),
+            WORKFLOW_TOOL_MARKER,
+            "An incompatible workflow control tool already exists",
+        ),
+    ]
 
     existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     try:
@@ -67,22 +153,28 @@ def configure_workdir(workdir: Path) -> Path:
             f"Cannot update invalid TOML configuration: {config_path}"
         ) from error
 
-    workflow_servers = [
-        server
-        for server in _workflow_servers(parsed)
-        if server.get("name") == "workflow"
-    ]
-    if workflow_servers:
-        if len(workflow_servers) == 1 and _matches(workflow_servers[0], database_path):
-            return config_path
-        raise WorkflowConfigurationError(
-            f"An incompatible MCP server named 'workflow' already exists in {config_path}"
+    servers = _workflow_servers(parsed)
+    memory_configured = _has_compatible_server(
+        servers,
+        MEMORY_SERVER_NAME,
+        lambda server: _matches_memory_server(server, database_path),
+        config_path,
+    )
+    for managed_file in managed_files:
+        _validate_managed_file(*managed_file)
+
+    blocks: list[str] = []
+    if not memory_configured:
+        blocks.append(render_mcp_config(database_path))
+    if blocks:
+        separator = "" if not existing or existing.endswith("\n\n") else "\n"
+        rendered_blocks = "\n".join(blocks)
+        config_path.write_text(
+            f"{existing}{separator}{rendered_blocks}", encoding="utf-8"
         )
 
-    separator = "" if not existing or existing.endswith("\n\n") else "\n"
-    config_path.write_text(
-        f"{existing}{separator}{render_mcp_config(database_path)}", encoding="utf-8"
-    )
+    for path, content, _marker, _conflict in managed_files:
+        _write_managed_file(path, content)
     return config_path
 
 
@@ -103,7 +195,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except WorkflowConfigurationError as error:
         print(f"error: {error}")
         return 1
-    print(f"Configured workflow MCP server in {config_path}")
+    print(
+        f"Configured workflow MCP, control tools, and /workflow skill in {config_path}"
+    )
     print("Trust this folder once in interactive Vibe before starting the workflow.")
     return 0
 

@@ -277,6 +277,7 @@ async def run_worker(
     child_environment = dict(environment if environment is not None else os.environ)
     child_environment.setdefault("PYTHONIOENCODING", "utf-8")
     child_environment.setdefault("PYTHONUTF8", "1")
+    child_environment["VIBE_WORKFLOW_WORKER"] = "1"
 
     try:
         command, json_log, stderr_log = await _prepare_worker(role, goal, workdir)

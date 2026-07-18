@@ -2,8 +2,9 @@
 
 `vibe-workflow` is a hackathon extension that coordinates three unmodified
 Mistral Vibe CLI processes through a shared SQLite blackboard. It does not fork
-the Vibe agent loop or import private Vibe APIs: coordination uses a project MCP
-server and Vibe's programmatic `--prompt --output streaming` mode.
+the Vibe agent loop or import private Vibe APIs: coordination uses project MCP
+server, custom tools, a user-invocable Skill, and Vibe's programmatic
+`--prompt --output streaming` mode.
 
 ## Install
 
@@ -30,13 +31,15 @@ share auto-approved access to their target workdir.
 Run the setup helper once for each target project, using an absolute path:
 
 ```console
-uv run setup_workflow.py --workdir "<absolute-path-to-target-project>"
+uv run vibe-workflow-setup --workdir "<absolute-path-to-target-project>"
 ```
 
 With the editable pip installation, run the same helper with
 `python setup_workflow.py`. The helper preserves existing valid TOML, appends an
-idempotent `workflow` MCP entry to `<workdir>/.vibe/config.toml`, and refuses to
-replace an incompatible server that already uses that name. It configures:
+idempotent `workflow` MCP entry in `<workdir>/.vibe/config.toml`, installs the
+project Skill at `<workdir>/.vibe/skills/workflow/SKILL.md`, and installs its
+custom-tool loader at `<workdir>/.vibe/tools/workflow_control.py`. It refuses to
+replace incompatible extensions that already use those paths. The MCP entry is:
 
 ```toml
 [[mcp_servers]]
@@ -50,7 +53,7 @@ env = { "WORKFLOW_DB" = "<absolute-workdir>/workflow.db" }
 The setup helper escapes the platform-specific path, including Windows paths;
 prefer it over copying the TOML by hand.
 
-### Persistently trust the workdir
+## Persistently trust the workdir
 
 This step is mandatory for this Vibe checkout. After setup has created the
 project `.vibe/config.toml`, start one interactive Vibe session in the target:
@@ -83,12 +86,40 @@ PowerShell:
 $env:MISTRAL_API_KEY = "your-key"
 ```
 
-## Run the Todo demo
+## Run from the interactive Vibe CLI
 
-After installation, MCP setup, and persistent trust, the demo is one command:
+Start Vibe in the configured target project:
 
 ```console
-uv run orchestrator.py run --goal "API Todo en Flask avec 2 endpoints + tests" --workdir "<absolute-path-to-target-project>"
+uv run vibe --workdir "<absolute-path-to-target-project>"
+```
+
+The setup helper exposes `/workflow` in Vibe's slash-command menu. Start a run
+without blocking the TUI:
+
+```text
+/workflow API Todo en Flask avec 2 endpoints + tests
+```
+
+The Planner, Backend, and QA agents continue in the background while the Vibe
+session remains available. Inspect or cancel that run from the same CLI:
+
+```text
+/workflow status
+/workflow stop
+```
+
+Keep the Vibe session open until the workflow finishes. The in-process control
+tools allow only one background run per Vibe session, retain access to the API
+key without copying it into project configuration, and are hidden from
+orchestrated child workers to prevent recursive workflow launches.
+
+## Run the Todo demo
+
+The standalone entry point remains available for scripts and CI:
+
+```console
+uv run vibe-workflow run --goal "API Todo en Flask avec 2 endpoints + tests" --workdir "<absolute-path-to-target-project>"
 ```
 
 The Planner runs first. Backend and QA then run concurrently in the same
@@ -104,18 +135,18 @@ therefore passes both `--agent auto-approve` and `--auto-approve` explicitly.
 This allows file edits, commands, and MCP calls without confirmation. Use a
 dedicated target directory and version control for anything valuable.
 
-## Watch status
+## Watch standalone status
 
 In a second terminal, keep a live dashboard open while the workflow runs:
 
 ```console
-uv run orchestrator.py status --workdir "<absolute-path-to-target-project>"
+uv run vibe-workflow status --workdir "<absolute-path-to-target-project>"
 ```
 
 Press `Ctrl+C` to stop the dashboard. To print one snapshot and exit:
 
 ```console
-uv run orchestrator.py status --workdir "<absolute-path-to-target-project>" --once
+uv run vibe-workflow status --workdir "<absolute-path-to-target-project>" --once
 ```
 
 The uncoupled dashboard entry point exposes the same modes:
@@ -132,12 +163,15 @@ the first status update it displays `No agent status yet`.
 ## Architecture
 
 ```text
-orchestrator.py
-  |-- Planner Vibe process ---------\
-  |-- Backend Vibe process ----------+--> workflow MCP over stdio --> workflow.db
-  `-- QA Vibe process --------------/                                  ^
-                                                                        |
-dashboard.py (read-only) -----------------------------------------------'
+interactive Vibe -> /workflow Skill -> custom control tools
+                                         |
+                                         v
+                                    orchestrator.py
+                                      |-- Planner Vibe process ---------\
+                                      |-- Backend Vibe process ----------+--> workflow MCP --> workflow.db
+                                      `-- QA Vibe process --------------/                       ^
+                                                                                                 |
+dashboard.py (read-only) ------------------------------------------------------------------------'
 ```
 
 ### Shared memory
@@ -162,8 +196,8 @@ these files and `logs/` normally belong in the target project's ignore rules.
 
 ### MCP tools
 
-The server exposes exactly three tools. Vibe prefixes them with the configured
-server name:
+The memory server still exposes exactly three tools. Vibe prefixes them with the
+configured server name:
 
 - `workflow_read_decisions(filter_role, since_id)` returns decision records and
   must be called before an agent starts work. QA also uses it for incremental
@@ -176,6 +210,18 @@ server name:
 The tool docstrings and role prompts deliberately repeat the protocol: read
 first, publish every significant deliverable or interface contract, and update
 status at the beginning and end of work.
+
+The project custom-tool extension exposes three user-facing control tools:
+
+- `start_workflow(goal)` starts orchestration in a background
+  task and returns immediately.
+- `get_workflow_status()` returns controller state and the
+  latest SQLite snapshot for every role.
+- `stop_workflow()` cancels the run owned by the current Vibe
+  session and terminates its active worker processes.
+
+The `/workflow` Skill maps `run`, `status`, and `stop` requests to those tools.
+It never shells out to a nested interactive Vibe process.
 
 ### Role prompts and sequencing
 

@@ -141,6 +141,7 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 include = [
     "vibe/",
+    "workflow_control/",
     "workflow_memory/",
     "prompts/",
     "orchestrator.py",

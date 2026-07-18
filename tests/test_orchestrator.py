@@ -146,6 +146,7 @@ async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
         **environment,
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
+        "VIBE_WORKFLOW_WORKER": "1",
     }
 
     json_lines = (
