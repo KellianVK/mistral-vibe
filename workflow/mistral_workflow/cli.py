@@ -7,7 +7,8 @@ from pathlib import Path
 import click
 
 from mistral_workflow.blackboard.store import Blackboard, blackboard_path
-from mistral_workflow.planner import role_log_path, run_workflow
+from mistral_workflow.loop_engine import retry_qa_gate, run_workflow
+from mistral_workflow.planner import role_log_path
 from mistral_workflow.roles import WorkflowManifest, load_manifest, manifest_path
 
 DEFAULT_ROLES = ["planner", "backend", "qa", "reviewer"]
@@ -258,9 +259,29 @@ def graph(project_dir: Path) -> None:
     type=click.Path(file_okay=False, path_type=Path),
 )
 def loop(project_dir: Path) -> None:
-    """Manually trigger the Loop Engine against the manifest's gates."""
-    click.echo("`mistral workflow loop` lands in Phase 3 (loop engine not built yet).", err=True)
-    sys.exit(1)
+    """Manually retry a blocked QA gate (e.g. after you've poked at the code yourself)."""
+    project_dir = project_dir.resolve()
+    manifest = _require_manifest(project_dir)
+    blackboard = Blackboard(blackboard_path(project_dir))
+    state = blackboard.state()
+
+    blocked_qa_roles = [
+        role
+        for role in manifest.roles
+        if role.agent_profile == "qa" and state["agents"].get(role.name, {}).get("status") == "blocked"
+    ]
+    if not blocked_qa_roles:
+        click.echo("No blocked QA gate found — nothing to retry.")
+        return
+
+    role = blocked_qa_roles[0]
+    click.echo(f"Retrying '{role.name}' gate (up to {manifest.project.max_loop_iterations} iteration(s))...")
+    ok = retry_qa_gate(project_dir, manifest, blackboard, role)
+    if ok:
+        click.echo(f"'{role.name}' now passes.")
+    else:
+        click.echo(f"'{role.name}' still blocked — see `mistral workflow status`.", err=True)
+        sys.exit(1)
 
 
 @workflow.command()

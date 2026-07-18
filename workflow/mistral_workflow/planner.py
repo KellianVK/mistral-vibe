@@ -1,10 +1,13 @@
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from mistral_workflow.blackboard.store import Blackboard
 from mistral_workflow.roles import RoleSpec, WorkflowManifest
 from mistral_workflow.vibe_runner import VibeResult, run_vibe_role
+
+MAX_FAIL_DETAIL_CHARS = 2000
 
 
 def role_log_path(project_dir: Path, role_name: str) -> Path:
@@ -28,6 +31,7 @@ def _write_role_log(project_dir: Path, role_name: str, result: VibeResult) -> No
         )
     )
 
+
 ROLE_TASK_FRAMING = {
     "planner": (
         "Break the project goal down into a short, concrete implementation plan for the "
@@ -37,14 +41,22 @@ ROLE_TASK_FRAMING = {
     ),
     "backend": (
         "Implement the current step of the plan in this project's codebase. Write real, "
-        "working code and create whatever files are needed. If the log below includes a "
-        "QA failure, fix that specific failure rather than starting over."
+        "working code and create whatever files are needed. Do NOT write or run tests "
+        "yourself — that is QA's job, done independently; a bug and its own 'proof' coming "
+        "from the same author defeats the point of having separate roles. If the log below "
+        "includes a QA failure, fix that specific failure — read the failing test output "
+        "carefully and address the root cause rather than starting over."
     ),
     "qa": (
-        "Write and/or run tests for the code Backend just produced. Actually execute the "
-        "test suite with a shell command rather than just reading the code. Your final "
-        "message MUST start with a line that is exactly 'RESULT: PASS' or 'RESULT: FAIL', "
-        "followed by a short explanation of what you tested."
+        "Write your OWN tests for the code Backend just produced, independent of anything "
+        "Backend may have already written — do not just trust or re-run existing tests. "
+        "Base each test on what the function's name and the team's goal say it should do "
+        "(e.g. a function called add(a, b) must satisfy add(2, 3) == 5), not on whatever the "
+        "current implementation happens to return. Actually execute the test suite with a "
+        "shell command rather than just reading the code. Your final message MUST start with "
+        "a line that is exactly 'RESULT: PASS' or 'RESULT: FAIL', followed by the actual test "
+        "output (assertion errors, expected vs actual) so a teammate could diagnose a failure "
+        "without re-running anything."
     ),
     "reviewer": (
         "Review the code and test results produced so far for correctness and quality. Do "
@@ -100,35 +112,56 @@ def extract_qa_result(final_text: str) -> bool | None:
     return None
 
 
+@dataclass
+class RoleOutcome:
+    success: bool  # the vibe subprocess itself ran without crashing/timing out
+    qa_passed: bool | None  # only set when role.agent_profile == "qa"
+    summary: str
+
+
+def run_single_role(
+    project_dir: Path, manifest: WorkflowManifest, blackboard: Blackboard, role: RoleSpec
+) -> RoleOutcome:
+    """Run one role's headless Vibe turn and record its outcome on the Blackboard."""
+    blackboard.update_status(role.name, "working", current_task=role.agent_profile)
+    prompt = build_prompt(role, manifest, blackboard)
+    result = run_vibe_role(prompt=prompt, agent=role.agent_profile, workdir=project_dir)
+    _write_role_log(project_dir, role.name, result)
+
+    if not result.success:
+        blackboard.update_status(role.name, "error", current_task=result.error)
+        blackboard.publish_decision(role.name, f"ERROR: {result.error}")
+        return RoleOutcome(success=False, qa_passed=None, summary=result.error or "unknown error")
+
+    summary = extract_summary(result.final_text)
+    qa_passed = extract_qa_result(result.final_text) if role.agent_profile == "qa" else None
+
+    if role.agent_profile == "qa" and qa_passed is not True:
+        # Publish the full test output (not just the one-line summary) so a
+        # retried Backend has the actual failure to diagnose, not a vague
+        # "tests failed". Also covers a garbled/incomplete QA turn (seen in
+        # practice: the model emitting a malformed tool call as plain text
+        # and stopping) — "no clear RESULT: PASS" is never read as a pass.
+        detail = result.final_text.strip()[:MAX_FAIL_DETAIL_CHARS] or summary
+        blackboard.publish_decision(role.name, f"FAIL: {detail}")
+        blackboard.update_status(role.name, "blocked", current_task="tests failing or inconclusive")
+        return RoleOutcome(success=True, qa_passed=False, summary=summary)
+
+    blackboard.publish_decision(role.name, summary)
+    blackboard.update_status(role.name, "done", current_task=summary)
+    return RoleOutcome(success=True, qa_passed=qa_passed, summary=summary)
+
+
 def run_workflow(project_dir: Path, manifest: WorkflowManifest, blackboard: Blackboard) -> bool:
-    """Sequential execution in dependency order. Returns True iff every role
-    completed without error and QA (if present) reported PASS. Phase-1 cut:
-    a QA failure stops the run rather than looping — loop_engine.py (Phase 3)
-    replaces this with a bounded Backend<->QA retry.
+    """Sequential execution in dependency order, no retries. Returns True iff
+    every role completed without error and QA (if present) reported PASS.
+    Kept as a simple building block; `mistral workflow run` uses
+    loop_engine.run_workflow, which adds the bounded Backend<->QA retry.
     """
     for role in manifest.execution_order():
-        blackboard.update_status(role.name, "working", current_task=role.agent_profile)
-        prompt = build_prompt(role, manifest, blackboard)
-        result = run_vibe_role(prompt=prompt, agent=role.agent_profile, workdir=project_dir)
-        _write_role_log(project_dir, role.name, result)
-
-        if not result.success:
-            blackboard.update_status(role.name, "error", current_task=result.error)
-            blackboard.publish_decision(role.name, f"ERROR: {result.error}")
+        outcome = run_single_role(project_dir, manifest, blackboard, role)
+        if not outcome.success:
             return False
-
-        summary = extract_summary(result.final_text)
-
-        if role.agent_profile == "qa" and extract_qa_result(result.final_text) is not True:
-            # Treat "no clear RESULT: PASS" the same as an explicit FAIL — a
-            # garbled/incomplete QA turn (seen in practice: the model emitting
-            # a malformed tool call as plain text and stopping) must not be
-            # silently read as a pass.
-            blackboard.publish_decision(role.name, f"FAIL: {summary}")
-            blackboard.update_status(role.name, "blocked", current_task="tests failing or inconclusive")
+        if role.agent_profile == "qa" and outcome.qa_passed is not True:
             return False
-
-        blackboard.publish_decision(role.name, summary)
-        blackboard.update_status(role.name, "done", current_task=summary)
-
     return True

@@ -1,5 +1,5 @@
 [project]
-goal = "A Python function add(a, b) that returns their sum, with a test"
+goal = "There is an existing calculator.py with an add(a, b) function used elsewhere in the codebase \u2014 do not modify add() itself. Add a multiply(a, b) function to calculator.py, matching the existing code style. Tests must cover every function in the module, both new and pre-existing."
 gates = ["tests"]
 max_loop_iterations = 3
 
