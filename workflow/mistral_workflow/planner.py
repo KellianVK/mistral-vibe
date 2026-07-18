@@ -119,9 +119,13 @@ def run_workflow(project_dir: Path, manifest: WorkflowManifest, blackboard: Blac
 
         summary = extract_summary(result.final_text)
 
-        if role.agent_profile == "qa" and extract_qa_result(result.final_text) is False:
+        if role.agent_profile == "qa" and extract_qa_result(result.final_text) is not True:
+            # Treat "no clear RESULT: PASS" the same as an explicit FAIL — a
+            # garbled/incomplete QA turn (seen in practice: the model emitting
+            # a malformed tool call as plain text and stopping) must not be
+            # silently read as a pass.
             blackboard.publish_decision(role.name, f"FAIL: {summary}")
-            blackboard.update_status(role.name, "blocked", current_task="tests failing")
+            blackboard.update_status(role.name, "blocked", current_task="tests failing or inconclusive")
             return False
 
         blackboard.publish_decision(role.name, summary)

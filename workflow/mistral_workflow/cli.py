@@ -196,9 +196,59 @@ def logs(agent_name: str, project_dir: Path) -> None:
     type=click.Path(file_okay=False, path_type=Path),
 )
 def graph(project_dir: Path) -> None:
-    """Start the blackboard API and open the live graph in the browser."""
-    click.echo("`mistral workflow graph` lands in Phase 2 (visualizer not built yet).", err=True)
-    sys.exit(1)
+    """Start the blackboard API + visualizer dev server and open the live graph."""
+    import os
+    import socket
+    import subprocess
+    import time
+    import webbrowser
+
+    project_dir = project_dir.resolve()
+    _require_manifest(project_dir)
+
+    def port_open(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            return s.connect_ex(("127.0.0.1", port)) == 0
+
+    # workflow/mistral_workflow/cli.py -> workflow/ -> repo root -> visualizer/
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    visualizer_dir = repo_root / "visualizer"
+
+    if port_open(8787):
+        click.echo("Blackboard API already running on http://localhost:8787")
+    else:
+        env = os.environ.copy()
+        env["MISTRAL_WORKFLOW_PROJECT_DIR"] = str(project_dir)
+        subprocess.Popen(
+            ["mistral-workflow-api"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        click.echo("Started blackboard API on http://localhost:8787")
+
+    if port_open(5173):
+        click.echo("Visualizer already running on http://localhost:5173")
+    else:
+        if not visualizer_dir.exists():
+            click.echo(f"Visualizer not found at {visualizer_dir}", err=True)
+            sys.exit(1)
+        if not (visualizer_dir / "node_modules").exists():
+            click.echo(f"Run `npm install` in {visualizer_dir} first.", err=True)
+            sys.exit(1)
+        subprocess.Popen(
+            ["npm", "run", "dev"],
+            cwd=str(visualizer_dir),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        click.echo("Started visualizer dev server on http://localhost:5173")
+        time.sleep(2)
+
+    webbrowser.open("http://localhost:5173")
 
 
 @workflow.command()

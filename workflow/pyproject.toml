@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 mistral = "mistral_workflow.cli:main"
+mistral-workflow-api = "mistral_workflow.blackboard.api:main"
 
 [build-system]
 requires = ["hatchling"]

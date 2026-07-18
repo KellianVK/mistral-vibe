@@ -1,0 +1,193 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid #2a2d34;
+  background: #14161b;
+  flex-shrink: 0;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.goal {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.conn-badge {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.conn-badge--live {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.conn-badge--poll {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.graph-pane {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.empty-state {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #6b7280;
+  padding: 40px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.empty-state code {
+  background: #1c1f26;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #e5e7eb;
+}
+
+.side-panel {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid #2a2d34;
+  background: #14161b;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.side-panel section + section {
+  margin-top: 24px;
+}
+
+.side-panel h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #9ca3af;
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed li {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  background: #1c1f26;
+  border-radius: 8px;
+}
+
+.feed__empty {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.role-tag {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #93c5fd;
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+
+/* ReactFlow role nodes */
+.role-node {
+  border-radius: 10px;
+  border: 2px solid #9ca3af;
+  background: #1c1f26;
+  color: #f5f5f5;
+  padding: 10px 14px;
+  min-width: 170px;
+}
+
+.role-node--working {
+  animation: role-pulse 1.6s ease-in-out infinite;
+}
+
+.role-node__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-node__title strong {
+  text-transform: capitalize;
+  font-size: 13px;
+}
+
+.role-node__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.role-node__status {
+  font-size: 10px;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.role-node__task {
+  font-size: 12px;
+  margin-top: 6px;
+  opacity: 0.85;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+@keyframes role-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(59, 130, 246, 0.4);
+  }
+}
