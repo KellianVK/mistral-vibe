@@ -19,8 +19,19 @@ vibe workflow run --goal "Extend calculator.py with multiply and a tiny web calc
 # 4. Préparer le projet du run LIVE (onglet 1 : http://127.0.0.1:8787)
 L=/tmp/demo-live && rm -rf $L && mkdir -p $L && cd $L
 
-# 5. Navigateur : onglet 1 = 8787 (vide pour l'instant), onglet 2 = 8790 (complet)
-# 6. Enregistrement de secours prêt. Terminal en police large.
+# 5. LANCER L'APP CONSTRUITE PAR LES AGENTS (onglet 3 du navigateur)
+#    Regarder ce que le pré-run a produit, puis la démarrer — PAS le port
+#    5000 (réservé macOS). Selon ce qui a été construit, typiquement :
+ls /tmp/demo-full
+(cd /tmp/demo-full && python3 -m flask --app server/app.py run --port 5001 &) \
+  || (cd /tmp/demo-full && python3 -m http.server 5001 &)
+#    Vérifier dans le navigateur : http://127.0.0.1:5001 (ou web/index.html).
+#    Noter la commande exacte qui marche — c'est elle qu'on montrera.
+#    Si aucune UI n'est sortie : préparer un `curl` de l'API à la place.
+
+# 6. Navigateur : onglet 1 = 8787 (vide), onglet 2 = 8790 (board complet),
+#    onglet 3 = l'app qui tourne. Enregistrement de secours prêt.
+#    Terminal en police large.
 ```
 
 Si le pré-run échoue en boucle qualité : le relancer ; sinon utiliser
@@ -72,7 +83,7 @@ Montrer, dans l'ordre où ça arrive :
 - onglet **Changes** → cliquer un fichier → **le diff du code réellement
   écrit, ligne par ligne**.
 
-### 3:00 – 4:15 — La fin de partie (onglet 2, board pré-calculé)
+### 3:00 – 4:00 — La fin de partie (onglet 2, board pré-calculé)
 
 > « Voici le même système au bout de sa course, sur un projet piégé : on
 > avait planté un bug dans le code de départ. »
@@ -94,7 +105,20 @@ Montrer sur 8790 :
    *« Ce verdict n'est pas décoratif : un hook natif refuse `git push` tant
    que le Reviewer n'a pas dit GO. »*
 
-### 4:15 – 5:00 — La chute
+### 4:00 – 4:40 — L'app qui tourne (onglet 3)
+
+> « Et le produit de tout ça, ce n'est pas un rapport — c'est une app. »
+
+1. Onglet **Changes** du board 8790 : cliquer `calculator.py` → **le diff du
+   fix de Backend** (`- return a - b` / `+ return a + b`) :
+   *« Voilà la correction que la boucle qualité a exigée, ligne par ligne. »*
+2. Onglet 3 : **l'app construite par les agents, en marche**. Taper le
+   calcul piégé : **2 + 3 → 5**.
+   *« Ce calcul-là était faux dans le code de départ. QA l'a attrapé,
+   Backend l'a corrigé, le Reviewer a validé — sans intervention humaine. »*
+   (Sans UI : `curl` de l'API en terminal, même narration.)
+
+### 4:40 – 5:00 — La chute
 
 Retour terminal, dans la session vibe :
 ```
@@ -103,13 +127,8 @@ Retour terminal, dans la session vibe :
 
 > « Tout ça sans quitter la CLI — et tout est natif : sous-commande
 > `vibe workflow`, outils natifs, hooks natifs, skill natif. Le feed de
-> décisions que vous voyez, c'est le journal de conception du projet, écrit
-> par les agents eux-mêmes. Vibe aujourd'hui, c'est un agent. MiaouFlow en
-> fait une équipe. »
-
-(Si le temps le permet : `vibe workflow init` sur un dossier vide pour
-montrer les questions de composition d'équipe — 15 s, sans lancer le run :
-Ctrl-C après l'affichage « Team of 8 ».)
+> décisions, c'est le journal de conception écrit par les agents eux-mêmes.
+> Vibe aujourd'hui, c'est un agent. MiaouFlow en fait une équipe. »
 
 ---
 
@@ -117,6 +136,8 @@ Ctrl-C après l'affichage « Team of 8 ».)
 
 - **Un truc traîne en longueur → basculer sur l'onglet 8790 sans s'excuser**
   et dérouler la fin de partie ; le live n'a pas besoin de finir.
+- L'app de l'onglet 3 tourne depuis AVANT la démo — on ne lance rien en
+  live, on ne fait que s'en servir.
 - Le run live n'ira que jusqu'à la vague 2 en 5 min : c'est prévu, la fin
   est sur l'onglet 2.
 - Board figé → F5 ; le pill passe `Reconnecting` → `Live` tout seul (repli
