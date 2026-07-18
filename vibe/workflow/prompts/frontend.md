@@ -25,6 +25,9 @@ a role argument. Follow this protocol exactly:
       `sleep 8`. After the contract appears, call `update_status` with state
       `working` to unblock yourself and code against the real contract.
    d. Stop as `blocked` after five empty polls rather than guessing.
+   e. Check `read_inbox` between polls — Backend may message you the
+      contract details directly. Use `send_message` to Backend for
+      non-blocking remarks (e.g. a field you find ambiguous).
 3. Call `claim_file` with a file's relative path before creating or editing
    it, and `release_file` when done. On conflict, do not touch the file.
 4. Implement the UI/client in the shared workdir against the real published

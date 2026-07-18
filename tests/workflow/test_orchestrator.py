@@ -461,3 +461,37 @@ async def test_run_workflow_runs_waves_in_order_with_parallel_second_wave(
 
     run = current_run(workflow_database_path(workdir))
     assert run is not None and run["goal"] == "Build a Todo API"
+
+
+def test_record_file_changes_attributes_via_claims(tmp_path: Path) -> None:
+    from vibe.workflow.store import claim_file, read_changes
+
+    database_path = tmp_path / "workflow.db"
+    initialize_database(database_path)
+    claim_file(database_path, "Frontend", "web/index.html")
+
+    before = {"server/app.py": (1.0, 10), "old.txt": (1.0, 5)}
+    after = {
+        "server/app.py": (2.0, 30),
+        "web/index.html": (2.0, 40),
+        "server/auth.py": (2.0, 20),
+    }
+    orchestrator._record_file_changes(database_path, "Backend", before, after)
+
+    changes = {(c["path"], c["action"]) for c in read_changes(database_path)}
+    # web/index.html is claimed by Frontend -> not attributed to Backend.
+    assert changes == {
+        ("server/app.py", "modified"),
+        ("server/auth.py", "created"),
+        ("old.txt", "deleted"),
+    }
+
+
+def test_snapshot_files_skips_hidden_and_ignored_dirs(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("x", encoding="utf-8")
+    (tmp_path / ".secret").write_text("x", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "junk.js").write_text("x", encoding="utf-8")
+
+    snapshot = orchestrator._snapshot_files(tmp_path)
+    assert set(snapshot) == {"app.py"}

@@ -391,3 +391,127 @@ class ReleaseFile(
             else f"You did not hold a claim on {args.path}"
         )
         yield BlackboardAck(ok=released, message=message)
+
+
+class SendMessageArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_role: str = Field(min_length=1, description="Teammate role to message")
+    content: str = Field(
+        min_length=1,
+        description="The message: a heads-up, a contract detail, a review remark",
+    )
+
+
+class SendMessage(
+    BaseTool[SendMessageArgs, BlackboardAck, BlackboardConfig, BlackboardState]
+):
+    description = (
+        "Send a direct message to a teammate's inbox. Use it for non-blocking "
+        "remarks and heads-ups; use request_review when you need an answer "
+        "before you can continue."
+    )
+
+    @classmethod
+    def is_available(cls, config: AnyVibeConfig | None = None) -> bool:
+        return _workflow_available(config)
+
+    async def run(
+        self, args: SendMessageArgs, ctx: InvokeContext | None = None
+    ) -> AsyncGenerator[BlackboardAck, None]:
+        await asyncio.to_thread(
+            blackboard_store.send_message,
+            _database_path(),
+            _current_role(),
+            args.target_role,
+            args.content,
+        )
+        yield BlackboardAck(
+            ok=True, message=f"Message delivered to {args.target_role}'s inbox"
+        )
+
+
+class BroadcastArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(
+        min_length=1, description="Announcement every teammate should see"
+    )
+
+
+class Broadcast(
+    BaseTool[BroadcastArgs, BlackboardAck, BlackboardConfig, BlackboardState]
+):
+    description = (
+        "Broadcast an announcement to the whole team (e.g. 'auth contract "
+        "published', 'tests are red on server/app.py')."
+    )
+
+    @classmethod
+    def is_available(cls, config: AnyVibeConfig | None = None) -> bool:
+        return _workflow_available(config)
+
+    async def run(
+        self, args: BroadcastArgs, ctx: InvokeContext | None = None
+    ) -> AsyncGenerator[BlackboardAck, None]:
+        await asyncio.to_thread(
+            blackboard_store.broadcast, _database_path(), _current_role(), args.content
+        )
+        yield BlackboardAck(ok=True, message="Broadcast delivered to the team")
+
+
+class ReadInboxArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class InboxMessageModel(BaseModel):
+    id: int
+    ts: str
+    from_role: str
+    content: str
+
+
+class ReadInboxResult(BaseModel):
+    messages: list[InboxMessageModel]
+    broadcasts: list[InboxMessageModel]
+    count: int
+
+
+class ReadInbox(
+    BaseTool[ReadInboxArgs, ReadInboxResult, BlackboardConfig, BlackboardState]
+):
+    description = (
+        "Read your unread direct messages (marks them read) and the team "
+        "broadcasts. Check your inbox at natural pauses in your work."
+    )
+
+    @classmethod
+    def is_available(cls, config: AnyVibeConfig | None = None) -> bool:
+        return _workflow_available(config)
+
+    async def run(
+        self, args: ReadInboxArgs, ctx: InvokeContext | None = None
+    ) -> AsyncGenerator[ReadInboxResult, None]:
+        role = _current_role()
+        unread = await asyncio.to_thread(
+            blackboard_store.read_inbox, _database_path(), role
+        )
+        all_broadcasts = await asyncio.to_thread(
+            blackboard_store.read_broadcasts, _database_path()
+        )
+        messages = [
+            InboxMessageModel(
+                id=m["id"], ts=m["ts"], from_role=m["from_role"], content=m["content"]
+            )
+            for m in unread
+        ]
+        broadcasts = [
+            InboxMessageModel(
+                id=b["id"], ts=b["ts"], from_role=b["from_role"], content=b["content"]
+            )
+            for b in all_broadcasts
+            if b["from_role"] != role
+        ]
+        yield ReadInboxResult(
+            messages=messages, broadcasts=broadcasts, count=len(messages)
+        )

@@ -1,0 +1,5 @@
+# Managed by vibe workflow (MiaouFlow).
+display_name = "Frontend"
+description = "MiaouFlow Frontend agent"
+active_model = "devstral-small"
+bypass_tool_permissions = true
