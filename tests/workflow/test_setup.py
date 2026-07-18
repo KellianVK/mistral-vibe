@@ -110,3 +110,40 @@ def test_init_noninteractive_with_goal_provisions_team(
     assert {"planner", "reviewer", "frontend", "security"} <= profiles
     out = capsys.readouterr().out
     assert "Team of" in out
+
+
+def test_generated_profiles_restrict_tools_per_role(tmp_path: Path) -> None:
+    roles = select_roles(["Planner", "Reviewer", "Security", "Backend"])
+    configure_workdir(tmp_path, roles)
+
+    planner = agent_profile_path(tmp_path, roles[0]).read_text(encoding="utf-8")
+    assert 'disabled_tools = ["write_file", "edit", "bash"]' in planner
+    reviewer = (tmp_path / ".vibe" / "agents" / "reviewer.toml").read_text(
+        encoding="utf-8"
+    )
+    assert 'disabled_tools = ["write_file", "edit", "bash"]' in reviewer
+    security = (tmp_path / ".vibe" / "agents" / "security.toml").read_text(
+        encoding="utf-8"
+    )
+    assert 'disabled_tools = ["write_file", "edit"]' in security
+    backend = (tmp_path / ".vibe" / "agents" / "backend.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "disabled_tools" not in backend
+
+
+def test_hooks_config_written_only_with_reviewer(tmp_path: Path) -> None:
+    from vibe.workflow.setup import hooks_config_path
+
+    no_reviewer = tmp_path / "a"
+    no_reviewer.mkdir()
+    configure_workdir(no_reviewer, select_roles(["Planner", "Backend"]))
+    assert not hooks_config_path(no_reviewer).exists()
+
+    with_reviewer = tmp_path / "b"
+    with_reviewer.mkdir()
+    configure_workdir(with_reviewer, select_roles(["Planner", "Backend", "Reviewer"]))
+    content = hooks_config_path(with_reviewer).read_text(encoding="utf-8")
+    assert "miaouflow-reviewer-gate" in content
+    assert 'type = "pre_tool"' in content
+    assert "guard_push" in content

@@ -8,6 +8,7 @@ marker: unmanaged files with the same name are never overwritten.
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from vibe.workflow.roles import RoleSpec
 
@@ -32,13 +33,17 @@ def agent_profile_path(workdir: Path, role: RoleSpec) -> Path:
 
 
 def render_agent_profile(role: RoleSpec) -> str:
-    return (
+    profile = (
         f"{MANAGED_MARKER}\n"
         f'display_name = "{role.name}"\n'
         f'description = "MiaouFlow {role.name} agent"\n'
         f'active_model = "{role.model}"\n'
         "bypass_tool_permissions = true\n"
     )
+    if role.disabled_tools:
+        rendered = ", ".join(f'"{tool}"' for tool in role.disabled_tools)
+        profile += f"disabled_tools = [{rendered}]\n"
+    return profile
 
 
 def _validate_managed_file(path: Path, content: str) -> None:
@@ -58,6 +63,23 @@ def _write_managed_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def hooks_config_path(workdir: Path) -> Path:
+    return workdir.expanduser().resolve() / ".vibe" / "hooks.toml"
+
+
+def render_hooks_config() -> str:
+    return (
+        f"{MANAGED_MARKER}\n"
+        "[[hooks]]\n"
+        'name = "miaouflow-reviewer-gate"\n'
+        'type = "pre_tool"\n'
+        'match = "bash"\n'
+        f'command = "{sys.executable} -m vibe.workflow.hooks.guard_push"\n'
+        "strict = true\n"
+        'description = "Blocks git push until the Reviewer publishes a GO verdict"\n'
+    )
+
+
 def configure_workdir(workdir: Path, roles: list[RoleSpec]) -> Path:
     resolved_workdir = workdir.expanduser().resolve()
     if not resolved_workdir.is_dir():
@@ -68,12 +90,14 @@ def configure_workdir(workdir: Path, roles: list[RoleSpec]) -> Path:
     vibe_dir = resolved_workdir / ".vibe"
     vibe_dir.mkdir(parents=True, exist_ok=True)
 
-    profiles = [
+    managed = [
         (agent_profile_path(resolved_workdir, role), render_agent_profile(role))
         for role in roles
     ]
-    for path, content in profiles:
+    if any(role.name == "Reviewer" for role in roles):
+        managed.append((hooks_config_path(resolved_workdir), render_hooks_config()))
+    for path, content in managed:
         _validate_managed_file(path, content)
-    for path, content in profiles:
+    for path, content in managed:
         _write_managed_file(path, content)
     return vibe_dir
