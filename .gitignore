@@ -209,7 +209,7 @@ result-*
 # MiaouFlow (vibe workflow) runtime artifacts
 workflow.db
 workflow.db-*
-visualizer/node_modules/
+node_modules/
 visualizer/dist/
 demo-project/logs/
 demo-project/.vibe/workflow-state.json
