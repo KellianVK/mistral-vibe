@@ -299,12 +299,42 @@ def loop(project_dir: Path) -> None:
 def memory(replay: bool, project_dir: Path) -> None:
     """Inspect the shared Blackboard."""
     project_dir = project_dir.resolve()
+    manifest_file = manifest_path(project_dir)
+    goal = load_manifest(manifest_file).project.goal if manifest_file.exists() else None
     state = Blackboard(blackboard_path(project_dir)).state()
+
     if not replay:
         click.echo(json.dumps(state, indent=2))
         return
-    click.echo("`mistral workflow memory --replay` lands in Phase 3.", err=True)
-    sys.exit(1)
+
+    if goal:
+        click.echo(f"Team goal: {goal}\n")
+
+    events = [{"kind": "decision", **d} for d in state["decisions"]]
+    events += [{"kind": "question", **q} for q in state["questions"]]
+    events.sort(key=lambda e: e.get("ts") or "")
+
+    if not events:
+        click.echo("Nothing has happened yet — run `mistral workflow run`.")
+        return
+
+    for e in events:
+        if e["kind"] == "decision":
+            if e["role"] == "loop_engine":
+                click.echo(f"  ↻ {e['summary']}")
+            elif e["summary"].startswith("FAIL:"):
+                click.echo(f"  {e['role']} hit a snag: {e['summary'][len('FAIL:'):].strip().splitlines()[0]}")
+            elif e["summary"].startswith("ERROR:"):
+                click.echo(f"  {e['role']} errored out: {e['summary'][len('ERROR:'):].strip()}")
+            else:
+                click.echo(f"  {e['role']} → {e['summary']}")
+        else:
+            resolved = " (resolved)" if e["resolved"] else ""
+            click.echo(f"  {e['from']} asked {e['to']}: \"{e['question']}\"{resolved}")
+
+    click.echo("\nCurrent status:")
+    for name, info in state["agents"].items():
+        click.echo(f"  {name:12s} {info['status']}")
 
 
 if __name__ == "__main__":
