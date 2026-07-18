@@ -42,6 +42,7 @@ DEFAULT_ROLES: tuple[RoleSpec, ...] = (
             "blackboard BEFORE implementing it."
         ),
         depends_on=("Planner",),
+        max_turns=60,
     ),
     RoleSpec(
         name="Frontend",
@@ -52,6 +53,7 @@ DEFAULT_ROLES: tuple[RoleSpec, ...] = (
             "Backend via the blackboard instead of guessing."
         ),
         depends_on=("Planner",),
+        max_turns=60,
     ),
     RoleSpec(
         name="QA",
@@ -61,6 +63,7 @@ DEFAULT_ROLES: tuple[RoleSpec, ...] = (
             "Independently test what Backend and Frontend built and publish a verdict."
         ),
         depends_on=("Planner", "Backend", "Frontend"),
+        max_turns=50,
     ),
     RoleSpec(
         name="Security",
