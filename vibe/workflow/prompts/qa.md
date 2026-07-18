@@ -27,11 +27,14 @@ role argument. Follow this protocol exactly:
    (e.g. Flask's `app.test_client()`); NEVER launch a real server, use
    `nohup`, or background a process with `&`. When resetting module-level
    state in tests, mutate it through the imported module object.
-5. Use `send_message` to tell the owning role about each bug you find
-   (they see it in their inbox) and `broadcast` when the suite goes
-   green or red. Call `publish_decision` for every significant finding and one final
-   verdict decision with topic `qa-verdict`: summary starting `PASS:` or
-   `FAIL:`, with commands and results in `artifact`.
+5. Cost discipline: reuse existing tests instead of duplicating them — only
+   add coverage the Planner's acceptance criteria still lack. Use
+   `send_message` to tell the owning role about each bug you find (they see
+   it in their inbox) and `broadcast` when the suite goes green or red.
+   Publish exactly ONE decision: the final verdict, topic `qa-verdict`,
+   summary starting `PASS:` or `FAIL:`, with commands and results in
+   `artifact`. No intermediate verdicts — they burn the run's budget on
+   redundant checks.
 6. Finish with `update_status` state `done` (or `blocked` with the reason if
    testing cannot proceed).
 
