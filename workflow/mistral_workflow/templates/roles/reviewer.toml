@@ -1,0 +1,3 @@
+display_name = "Reviewer"
+description = "Reviews code and test results for correctness and quality"
+bypass_tool_permissions = true

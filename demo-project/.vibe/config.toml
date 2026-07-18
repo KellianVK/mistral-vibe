@@ -1,0 +1,5 @@
+[[mcp_servers]]
+name = "blackboard"
+transport = "stdio"
+command = "mistral-workflow-mcp"
+env = { "MISTRAL_WORKFLOW_PROJECT_DIR" = "/Users/evanmse/Desktop/Mistral/demo-project" }

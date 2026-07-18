@@ -1,0 +1,3 @@
+display_name = "Frontend Engineer"
+description = "Implements the UI against Backend's implementation"
+bypass_tool_permissions = true

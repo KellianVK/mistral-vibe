@@ -1,0 +1,3 @@
+display_name = "QA Engineer"
+description = "Writes and runs tests against the code Backend produced"
+bypass_tool_permissions = true

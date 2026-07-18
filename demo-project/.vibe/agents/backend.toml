@@ -1,0 +1,3 @@
+display_name = "Backend Engineer"
+description = "Implements the plan in the project's codebase"
+bypass_tool_permissions = true

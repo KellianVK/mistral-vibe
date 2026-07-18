@@ -1,0 +1,3 @@
+display_name = "Security Engineer"
+description = "Reviews Backend's code for security issues"
+bypass_tool_permissions = true

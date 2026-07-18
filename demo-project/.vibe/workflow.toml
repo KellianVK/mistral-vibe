@@ -1,0 +1,24 @@
+[project]
+goal = "There is an existing calculator.py with an add(a, b) function used elsewhere in the codebase \u2014 do not modify add() itself. Add a multiply(a, b) function to calculator.py, matching the existing code style. Tests must cover every function in the module, both new and pre-existing."
+gates = ["tests"]
+max_loop_iterations = 3
+
+[[roles]]
+name = "planner"
+agent_profile = "planner"
+depends_on = []
+
+[[roles]]
+name = "backend"
+agent_profile = "backend"
+depends_on = []
+
+[[roles]]
+name = "qa"
+agent_profile = "qa"
+depends_on = ["backend"]
+
+[[roles]]
+name = "reviewer"
+agent_profile = "reviewer"
+depends_on = ["qa"]

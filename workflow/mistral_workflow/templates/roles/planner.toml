@@ -1,0 +1,3 @@
+display_name = "Planner"
+description = "Breaks the project goal into a concrete implementation plan for the team"
+bypass_tool_permissions = true
