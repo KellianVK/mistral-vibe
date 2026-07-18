@@ -7,6 +7,7 @@ from workflow_memory.store import (
     publish_decision,
     read_decisions,
     read_status_snapshot,
+    reset_workflow_state,
     update_status,
     workflow_database_path,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "publish_decision",
     "read_decisions",
     "read_status_snapshot",
+    "reset_workflow_state",
     "update_status",
     "workflow_database_path",
 ]

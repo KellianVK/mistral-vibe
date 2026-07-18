@@ -58,13 +58,13 @@ class HangingProcess:
         self.terminate()
 
 
-def test_build_worker_command_uses_programmatic_safety_limits_as_single_argv(
+def test_build_worker_command_uses_role_limits_and_restricted_tools(
     tmp_path: Path,
 ) -> None:
     workdir = tmp_path / "project with spaces"
     prompt = 'Ship "quotes" & pipes | without a shell'
 
-    command = orchestrator.build_worker_command(prompt, workdir)
+    command = orchestrator.build_worker_command("Planner", prompt, workdir)
 
     assert command == [
         sys.executable,
@@ -77,13 +77,39 @@ def test_build_worker_command_uses_programmatic_safety_limits_as_single_argv(
         "--max-price",
         "1.00",
         "--max-turns",
-        "25",
+        "50",
         "--agent",
         "auto-approve",
         "--auto-approve",
         "--workdir",
         str(workdir),
+        "--enabled-tools",
+        "read_file",
+        "--enabled-tools",
+        "grep",
+        "--enabled-tools",
+        "workflow_read_decisions",
+        "--enabled-tools",
+        "workflow_publish_decision",
+        "--enabled-tools",
+        "workflow_update_status",
     ]
+
+    backend_command = orchestrator.build_worker_command("Backend", prompt, workdir)
+    qa_command = orchestrator.build_worker_command("QA", prompt, workdir)
+
+    assert backend_command[backend_command.index("--max-turns") + 1] == "50"
+    assert qa_command[qa_command.index("--max-turns") + 1] == "50"
+    for command in (backend_command, qa_command):
+        assert "bash" in command
+        assert "write_file" in command
+        assert "workflow_publish_decision" in command
+
+
+def test_completed_worker_succeeds_even_with_nonzero_process_exit() -> None:
+    result = orchestrator.WorkerResult(role="Planner", return_code=1, completed=True)
+
+    assert result.succeeded is True
 
 
 def test_build_worker_environment_adds_runtime_mcp_without_project_files(
@@ -97,9 +123,14 @@ def test_build_worker_environment_adds_runtime_mcp_without_project_files(
     }
 
     environment = orchestrator.build_worker_environment(
-        {"VIBE_MCP_SERVERS": json.dumps([existing_server])}, database_path
+        {
+            "VIBE_ACTIVE_MODEL": "devstral-small",
+            "VIBE_MCP_SERVERS": json.dumps([existing_server]),
+        },
+        database_path,
     )
 
+    assert environment["VIBE_ACTIVE_MODEL"] == "mistral-medium-3.5"
     assert json.loads(environment["VIBE_MCP_SERVERS"]) == [
         existing_server,
         {
@@ -132,6 +163,7 @@ async def test_worker_mcp_environment_is_valid_vibe_runtime_config(
     raw_config = await EnvironmentLayer(schema=VibeConfigSchema).load()
     config = VibeConfigSchema.model_validate(raw_config.model_dump())
 
+    assert config.active_model == "mistral-medium-3.5"
     assert len(config.mcp_servers) == 1
     server = config.mcp_servers[0]
     assert isinstance(server, MCPStdio)
@@ -141,7 +173,7 @@ async def test_worker_mcp_environment_is_valid_vibe_runtime_config(
 
 
 @pytest.mark.asyncio
-async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
+async def test_run_worker_logs_valid_json_and_surfaces_vibe_stop_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workdir = tmp_path / "project"
@@ -155,7 +187,10 @@ async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
             b"\n"
             b'{"role":"tool","content":"done"}\n'
         ),
-        stderr=b"diagnostic from vibe\n",
+        stderr=(
+            b"diagnostic from vibe\n"
+            b"<vibe_stop_event>Turn limit of 50 reached</vibe_stop_event>\n"
+        ),
     )
     invocation: dict[str, object] = {}
     status_updates: list[tuple[str, str, str]] = []
@@ -189,11 +224,11 @@ async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
     )
 
     assert result == orchestrator.WorkerResult(
-        role="Backend", return_code=7, error="Vibe exited with code 7"
+        role="Backend", return_code=7, error="Turn limit of 50 reached"
     )
     assert status_updates == [
         ("Backend", "working", "Working on: Implement the API"),
-        ("Backend", "blocked", "Vibe exited with code 7"),
+        ("Backend", "blocked", "Turn limit of 50 reached"),
     ]
     command = invocation["command"]
     assert isinstance(command, tuple)
@@ -206,6 +241,7 @@ async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
         **environment,
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
+        "VIBE_ACTIVE_MODEL": "mistral-medium-3.5",
         "VIBE_WORKFLOW_WORKER": "1",
     }
     expected_environment["VIBE_MCP_SERVERS"] = json.dumps([
@@ -226,9 +262,51 @@ async def test_run_worker_logs_only_valid_json_and_marks_nonzero_exit_blocked(
         {"role": "assistant", "content": "✓"},
         {"role": "tool", "content": "done"},
     ]
-    assert (workdir / "logs" / "backend.stderr.log").read_text(
-        encoding="utf-8"
-    ) == "diagnostic from vibe\n"
+    assert (workdir / "logs" / "backend.stderr.log").read_text(encoding="utf-8") == (
+        "diagnostic from vibe\n"
+        "<vibe_stop_event>Turn limit of 50 reached</vibe_stop_event>\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_worker_accepts_completed_blackboard_status_after_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    process = FakeProcess(
+        return_code=1,
+        stdout=b"",
+        stderr=b"<vibe_stop_event>Turn limit of 50 reached</vibe_stop_event>\n",
+    )
+
+    async def fake_create_subprocess_exec(
+        *_command: str, **_options: object
+    ) -> FakeProcess:
+        return process
+
+    async def fake_reported_done(_database_path: Path, role: str) -> bool:
+        return role == "Planner"
+
+    monkeypatch.setattr(
+        orchestrator.asyncio, "create_subprocess_exec", fake_create_subprocess_exec
+    )
+    monkeypatch.setattr(orchestrator, "_reported_done", fake_reported_done)
+    monkeypatch.setattr(orchestrator, "build_worker_prompt", lambda role, goal: goal)
+
+    result = await orchestrator.run_worker(
+        "Planner",
+        "Plan the game",
+        workdir,
+        workdir / "workflow.db",
+        asyncio.get_running_loop().time() + 30,
+        environment={"WORKFLOW_TEST": "present"},
+    )
+
+    assert result == orchestrator.WorkerResult(
+        role="Planner", return_code=1, completed=True
+    )
+    assert result.succeeded is True
 
 
 @pytest.mark.asyncio
@@ -321,14 +399,12 @@ async def test_successful_worker_is_blocked_when_it_publishes_no_decision(
 
 
 @pytest.mark.asyncio
-async def test_run_workflow_starts_parallel_workers_after_planner_failure(
+async def test_run_workflow_blocks_implementation_after_planner_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workdir = tmp_path / "project"
     workdir.mkdir()
     lifecycle: list[str] = []
-    parallel_started: set[str] = set()
-    both_parallel_workers_started = asyncio.Event()
 
     async def fake_run_worker(
         role: str,
@@ -341,22 +417,16 @@ async def test_run_workflow_starts_parallel_workers_after_planner_failure(
     ) -> orchestrator.WorkerResult:
         assert environment == {"MISTRAL_API_KEY": "test-key"}
         lifecycle.append(f"start:{role}")
-        if role == "Planner":
-            lifecycle.append("finish:Planner")
-            return orchestrator.WorkerResult(
-                role=role, return_code=3, error="planner failed"
-            )
-
-        parallel_started.add(role)
-        if parallel_started == {"Backend", "QA"}:
-            both_parallel_workers_started.set()
-        await asyncio.wait_for(both_parallel_workers_started.wait(), timeout=1)
-        lifecycle.append(f"finish:{role}")
-        return orchestrator.WorkerResult(role=role, return_code=0)
+        lifecycle.append("finish:Planner")
+        return orchestrator.WorkerResult(
+            role=role, return_code=3, error="planner failed"
+        )
 
     initialized: list[Path] = []
     monkeypatch.setattr(
-        orchestrator, "initialize_database", lambda path: initialized.append(Path(path))
+        orchestrator,
+        "reset_workflow_state",
+        lambda path: initialized.append(Path(path)),
     )
     monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
 
@@ -379,9 +449,65 @@ async def test_run_workflow_starts_parallel_workers_after_planner_failure(
     resolved_workdir = workdir.resolve()
     assert initialized == [resolved_workdir / "workflow.db"]
     assert not (resolved_workdir / ".vibe").exists()
-    assert lifecycle[:2] == ["start:Planner", "finish:Planner"]
-    assert set(lifecycle[2:4]) == {"start:Backend", "start:QA"}
+    assert lifecycle == ["start:Planner", "finish:Planner"]
     assert {result.role for result in results} == {"Planner", "Backend", "QA"}
     assert results[0].succeeded is False
-    assert results[1].succeeded is True
-    assert results[2].succeeded is True
+    assert (
+        results[1].error == "Planner did not complete; implementation was not started"
+    )
+    assert (
+        results[2].error == "Planner did not complete; implementation was not started"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_starts_backend_and_qa_after_successful_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    lifecycle: list[str] = []
+    release_workers = asyncio.Event()
+
+    async def fake_run_worker(
+        role: str,
+        _goal: str,
+        _workdir: Path,
+        _database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        assert environment == {"WORKFLOW_TEST": "present"}
+        lifecycle.append(f"start:{role}")
+        if role != "Planner":
+            if {"start:Backend", "start:QA"}.issubset(lifecycle):
+                release_workers.set()
+            await release_workers.wait()
+        lifecycle.append(f"finish:{role}")
+        if role == "Planner":
+            return orchestrator.WorkerResult(role=role, return_code=1, completed=True)
+        return orchestrator.WorkerResult(role=role, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "reset_workflow_state", lambda _path: None)
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    async def fake_verify(
+        result: orchestrator.WorkerResult, _database_path: Path, _since_id: int | None
+    ) -> orchestrator.WorkerResult:
+        return result
+
+    monkeypatch.setattr(orchestrator, "_verify_published_decision", fake_verify)
+
+    async def fake_latest_decision_id(_database_path: Path) -> None:
+        return None
+
+    monkeypatch.setattr(orchestrator, "_latest_decision_id", fake_latest_decision_id)
+
+    results = await orchestrator.run_workflow(
+        "Build a Todo API", workdir, environment={"WORKFLOW_TEST": "present"}
+    )
+
+    assert lifecycle[0:2] == ["start:Planner", "finish:Planner"]
+    assert set(lifecycle[2:4]) == {"start:Backend", "start:QA"}
+    assert all(result.succeeded for result in results)

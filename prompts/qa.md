@@ -17,9 +17,9 @@ protocol exactly:
    set to `Backend` and `since_id` set to the greatest relevant decision id you
    have already observed. The tool uses `id > since_id` for incremental polling.
    After every empty poll, wait twelve seconds by calling `bash` with the
-   portable command `python -c "import time; time.sleep(12)"` before polling again. Never
-   issue consecutive empty polls without that delay, and stop as blocked after
-   five empty polls rather than exhausting all turns.
+   portable command `python -c "import time; time.sleep(12)"` before polling
+   again. Never issue consecutive empty polls without that delay, and stop as
+   blocked after ten empty polls rather than exhausting all turns.
 3. Once a Backend decision appears, read all new shared decisions again, inspect
    the delivered files, and derive tests from the Planner and Backend contracts.
 4. Run the relevant tests. Add or improve automated tests in the shared workdir

@@ -16,6 +16,8 @@ from workflow_memory.store import (
     publish_decision,
     read_decisions,
     read_status_snapshot,
+    reset_workflow_state,
+    update_status,
 )
 
 
@@ -135,3 +137,15 @@ def test_concurrent_publishers_use_independent_sqlite_connections(
     assert {decision["summary"] for decision in decisions} == {
         f"Decision {index}" for index in range(32)
     }
+
+
+def test_reset_workflow_state_starts_a_fresh_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "workflow.db"
+    publish_decision(db_path, "Planner", "Old plan")
+    update_status(db_path, "Planner", "done", "Old run completed")
+
+    reset_workflow_state(db_path)
+
+    assert read_decisions(db_path) == []
+    assert read_status_snapshot(db_path) == []
+    assert publish_decision(db_path, "Planner", "New plan") == "1"

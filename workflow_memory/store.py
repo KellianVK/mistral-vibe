@@ -78,6 +78,14 @@ def initialize_database(db_path: DatabasePath) -> None:
         _initialized_databases.add(path)
 
 
+def reset_workflow_state(db_path: DatabasePath) -> None:
+    path = _ready_database(db_path)
+    with closing(_open_connection(path)) as connection, connection:
+        connection.execute("DELETE FROM status")
+        connection.execute("DELETE FROM decisions")
+        connection.execute("DELETE FROM sqlite_sequence WHERE name = 'decisions'")
+
+
 def publish_decision(
     db_path: DatabasePath, role: str, summary: str, artifact: str | None = None
 ) -> str:

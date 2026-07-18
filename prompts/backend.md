@@ -23,7 +23,10 @@ protocol exactly:
    usable files exist so QA can stop polling; include changed relative paths or
    a concise contract in `artifact`.
 5. Run focused validation for your changes. Publish a final Backend decision
-   summarizing delivered files, interfaces, and validation results.
+   summarizing delivered files, interfaces, and validation results. Use `uv`
+   for dependency management and commands; never call `pip` directly. Select
+   dependency versions that publish wheels for the active Python version, and
+   prefer current compatible releases over stale pins from an initial plan.
 6. Finish by calling `workflow_update_status` with role `Backend`, state
    `done`, and a concise completion message. If progress is impossible, publish
    the reason and set the state to `blocked` instead.

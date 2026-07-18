@@ -23,7 +23,9 @@ share auto-approved access to their target workdir.
 The workers use the same Vibe installation, home directory, provider
 configuration, environment, and OS keyring as the parent session. Any
 authentication method already supported by Vibe therefore works without
-workflow-specific setup.
+workflow-specific setup. Their active model is pinned at runtime to
+`mistral-medium-3.5`; this does not modify the parent session or persisted user
+configuration.
 
 ## Run from the interactive Vibe CLI
 
@@ -64,10 +66,11 @@ uv run vibe-workflow run --goal "API Todo en Flask avec 2 endpoints + tests" --w
 
 The Planner runs first. Backend and QA then run concurrently in the same
 workdir; QA polls the blackboard until Backend publishes a decision before it
-tests the implementation. The whole workflow has a ten-minute deadline. Each
-worker is independently capped at 25 turns and USD 1.00, so the price cap is per
-worker rather than USD 1.00 for the complete three-agent run. The maximum
-theoretical price for all three workers is therefore USD 3.00.
+tests the implementation. The whole workflow has a ten-minute deadline and each
+worker is capped at 50 turns and USD 1.00, so the maximum theoretical price for
+all three workers is USD 3.00. Planner only receives read and coordination
+tools; if it fails before publishing a completed plan, Backend and QA are
+blocked without launching.
 
 The current Vibe programmatic mode follows `default_agent`; it is not
 unconditionally auto-approved. For headless compatibility, the orchestrator
@@ -132,10 +135,11 @@ The database contains two tables:
 - `status(role, state, current_task, updated_at)` stores one upserted row per
   role. Valid states are `working`, `idle`, `blocked`, and `done`.
 
-The database persists between runs and decision counts are cumulative. Use a
-fresh target when a demo must start from an empty blackboard. SQLite may also
-create `workflow.db-wal` and `workflow.db-shm` while processes are connected;
-these files and `logs/` normally belong in the target project's ignore rules.
+The database file persists, but decisions and statuses are cleared atomically
+when a new workflow starts so agents never consume stale coordination data.
+SQLite may also create `workflow.db-wal` and `workflow.db-shm` while processes
+are connected; these files and `logs/` normally belong in the target project's
+ignore rules.
 
 ### MCP tools
 
@@ -178,7 +182,9 @@ global deadline, the orchestrator marks that role `blocked` in SQLite. Other
 workers continue when time remains. A zero exit code without a new decision
 from that role is also treated as `blocked`, which catches missing or ignored
 MCP configuration. A successful process with a published decision is finalized
-as `done`.
+as `done`. A worker that publishes its required decision and reports `done`
+also remains successful if Vibe reaches its turn limit while producing the
+final headless response.
 
 ### Logs
 
@@ -189,5 +195,7 @@ Each run writes per-role output beneath `<workdir>/logs/`:
 - `planner.stderr.log`, `backend.stderr.log`, and `qa.stderr.log` preserve
   diagnostics, including startup and trust/configuration errors.
 
-Each worker truncates its two log files when it starts. The database, unlike
-the logs, is not reset automatically.
+Each worker truncates its two log files when it starts. Tagged Vibe stop
+reasons, such as turn or price limits, are surfaced directly in workflow
+status. The database's coordination rows are reset when the workflow starts,
+while the database file itself is retained.

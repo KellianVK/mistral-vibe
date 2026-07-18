@@ -7,24 +7,42 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 
 from dashboard import resolve_database_path, watch_status
+from vibe.core.utils.io import read_safe
+from vibe.core.utils.tags import VIBE_STOP_EVENT_TAG
 from workflow_memory.store import (
-    initialize_database,
     read_decisions,
+    read_status_snapshot,
+    reset_workflow_state,
     update_status,
     workflow_database_path,
 )
 
 MAX_WORKFLOW_SECONDS = 10 * 60
 MAX_PRICE = "1.00"
-MAX_TURNS = "25"
+MAX_TURNS_BY_ROLE = {"Planner": "50", "Backend": "50", "QA": "50"}
+WORKFLOW_MODEL = "mistral-medium-3.5"
 STREAM_LIMIT_BYTES = 10 * 1024 * 1024
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 MCP_SERVERS_ENV = "VIBE_MCP_SERVERS"
 WORKER_ENV = "VIBE_WORKFLOW_WORKER"
+STOP_EVENT_PATTERN = re.compile(
+    rf"<{VIBE_STOP_EVENT_TAG}>(.*?)</{VIBE_STOP_EVENT_TAG}>", re.DOTALL
+)
+COORDINATION_TOOLS = [
+    "workflow_read_decisions",
+    "workflow_publish_decision",
+    "workflow_update_status",
+]
+ENABLED_TOOLS_BY_ROLE = {
+    "Planner": ["read_file", "grep", *COORDINATION_TOOLS],
+    "Backend": ["bash", "read_file", "grep", "write_file", "edit", *COORDINATION_TOOLS],
+    "QA": ["bash", "read_file", "grep", "write_file", "edit", *COORDINATION_TOOLS],
+}
 
 
 @dataclass(frozen=True)
@@ -33,10 +51,12 @@ class WorkerResult:
     return_code: int
     timed_out: bool = False
     error: str | None = None
+    completed: bool = False
 
     @property
     def succeeded(self) -> bool:
-        return self.return_code == 0 and not self.timed_out and self.error is None
+        exited_cleanly = self.return_code == 0 or self.completed
+        return exited_cleanly and not self.timed_out and self.error is None
 
 
 class WorkflowRunError(RuntimeError):
@@ -63,8 +83,8 @@ def build_worker_prompt(role: str, goal: str) -> str:
     return prompt_path.read_text(encoding="utf-8").replace("{{GOAL}}", goal)
 
 
-def build_worker_command(prompt: str, workdir: Path) -> list[str]:
-    return [
+def build_worker_command(role: str, prompt: str, workdir: Path) -> list[str]:
+    command = [
         sys.executable,
         "-m",
         "vibe.cli.entrypoint",
@@ -75,13 +95,16 @@ def build_worker_command(prompt: str, workdir: Path) -> list[str]:
         "--max-price",
         MAX_PRICE,
         "--max-turns",
-        MAX_TURNS,
+        MAX_TURNS_BY_ROLE[role],
         "--agent",
         "auto-approve",
         "--auto-approve",
         "--workdir",
         str(workdir),
     ]
+    for tool in ENABLED_TOOLS_BY_ROLE[role]:
+        command.extend(["--enabled-tools", tool])
+    return command
 
 
 def build_worker_environment(
@@ -112,6 +135,7 @@ def build_worker_environment(
         "env": {"WORKFLOW_DB": str(database_path)},
     })
     child_environment[MCP_SERVERS_ENV] = json.dumps(servers)
+    child_environment["VIBE_ACTIVE_MODEL"] = WORKFLOW_MODEL
     child_environment.setdefault("PYTHONIOENCODING", "utf-8")
     child_environment.setdefault("PYTHONUTF8", "1")
     child_environment[WORKER_ENV] = "1"
@@ -125,6 +149,16 @@ def _append_text(path: Path, text: str) -> None:
 
 def _truncate_log(path: Path) -> None:
     path.write_text("", encoding="utf-8")
+
+
+def _read_worker_stop_reason(path: Path) -> str | None:
+    try:
+        matches = STOP_EVENT_PATTERN.findall(read_safe(path).text)
+    except OSError:
+        return None
+    if not matches:
+        return None
+    return " ".join(matches[-1].split())
 
 
 async def _capture_json_stream(stream: asyncio.StreamReader, log_path: Path) -> None:
@@ -167,6 +201,13 @@ async def _set_status(
     database_path: Path, role: str, state: str, current_task: str
 ) -> None:
     await asyncio.to_thread(update_status, database_path, role, state, current_task)
+
+
+async def _reported_done(database_path: Path, role: str) -> bool:
+    statuses = await asyncio.to_thread(read_status_snapshot, database_path)
+    return any(
+        status["role"] == role and status["state"] == "done" for status in statuses
+    )
 
 
 async def _blocked_worker(
@@ -221,7 +262,7 @@ async def _prepare_worker(
         asyncio.to_thread(_truncate_log, json_log),
         asyncio.to_thread(_truncate_log, stderr_log),
     )
-    return build_worker_command(prompt, workdir), json_log, stderr_log
+    return build_worker_command(role, prompt, workdir), json_log, stderr_log
 
 
 async def _launch_worker(
@@ -284,10 +325,13 @@ async def _monitor_worker(
         )
 
     if return_code != 0:
+        if await _reported_done(database_path, role):
+            return WorkerResult(role=role, return_code=return_code, completed=True)
+        stop_reason = await asyncio.to_thread(_read_worker_stop_reason, stderr_log)
         return await _blocked_worker(
             database_path,
             role,
-            f"Vibe exited with code {return_code}",
+            stop_reason or f"Vibe exited with code {return_code}",
             return_code=return_code,
         )
 
@@ -347,11 +391,9 @@ async def run_workflow(
 
     database_path = workflow_database_path(resolved_workdir)
     try:
-        await asyncio.to_thread(initialize_database, database_path)
+        await asyncio.to_thread(reset_workflow_state, database_path)
     except (OSError, sqlite3.Error, RuntimeError) as error:
-        raise WorkflowRunError(
-            f"Cannot initialize workflow database: {error}"
-        ) from error
+        raise WorkflowRunError(f"Cannot prepare workflow database: {error}") from error
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     planner_since_id = await _latest_decision_id(database_path)
 
@@ -364,6 +406,14 @@ async def run_workflow(
         environment=child_environment,
     )
     planner = await _verify_published_decision(planner, database_path, planner_since_id)
+    if not planner.succeeded:
+        reason = "Planner did not complete; implementation was not started"
+        backend, qa = await asyncio.gather(
+            _blocked_worker(database_path, "Backend", reason),
+            _blocked_worker(database_path, "QA", reason),
+        )
+        return [planner, backend, qa]
+
     parallel_since_id = await _latest_decision_id(database_path)
     backend_task = asyncio.create_task(
         run_worker(
