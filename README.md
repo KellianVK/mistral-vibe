@@ -856,25 +856,36 @@ See the [LICENSE](LICENSE) file for the full license text.
 MiaouFlow turns Vibe from an agent into a team. Built natively into this fork — no external tools.
 
 ```sh
-# spawn the team on a goal (Planner first, then Backend ∥ Frontend; QA optional)
+# one command: compose a 6-8 agent team (Planner, Reviewer, Backend, QA,
+# Security, Docs + Frontend/DevOps when relevant), then run + open the board.
+# Empty dir -> a few questions; existing project -> scan + confirmation.
+vibe workflow init
+
+# or run an explicit team on a goal (Planner first, then Backend ∥ Frontend)
 vibe workflow run --goal "Build a small Todo API with JWT auth" --workdir demo-project
 
-# live board (React Flow): agent graph, decision feed, questions, file claims, timings
+# live board (React Flow): agent graph, decision feed, live messages, file
+# claims, per-agent timings — plus Logs, Changes, Add-agent, and System tabs
 open http://127.0.0.1:8787
 
 # extras
-vibe workflow run --roles Planner,Backend,Frontend,QA --goal "..."   # add the QA wave
+vibe workflow run --roles Planner,Backend,Frontend,QA --goal "..."   # pick the team
+vibe workflow init --no-auto-run                                     # provision only
 vibe workflow board --workdir demo-project                           # board only
 vibe workflow status --workdir demo-project                          # terminal snapshot
 ```
 
 How it works:
 
-- **Blackboard** — a SQLite (WAL) database per workdir. Agents get 8 native tools
-  (`publish_decision`, `read_decisions`, `request_review`, `answer_question`,
-  `read_questions`, `update_status`, `claim_file`, `release_file`), visible only to
-  workflow sessions (`VIBE_WORKFLOW_DB`); each agent's identity is pinned by the
-  orchestrator via `VIBE_WORKFLOW_ROLE`, so roles cannot impersonate each other.
+- **Blackboard** — a SQLite (WAL) database per workdir. Agents get 11 native tools:
+  decisions (`publish_decision`, `read_decisions`), questions (`request_review`,
+  `answer_question`, `read_questions`), status (`update_status`), soft file locks
+  (`claim_file`, `release_file`), and **live messaging** (`send_message`,
+  `broadcast`, `read_inbox`) — agents run in parallel and read their inbox
+  mid-turn, so messages land while the recipient is working, not on its next
+  spawn. Tools are visible only to workflow sessions (`VIBE_WORKFLOW_DB`); each
+  agent's identity is pinned by the orchestrator via `VIBE_WORKFLOW_ROLE`, so
+  roles cannot impersonate each other.
 - **Orchestrator** — spawns headless `vibe` workers per role in dependency waves
   (parallel within a wave), each with a pinned model via a generated agent profile.
   Every prompt gets a shared **warm-start brief** (goal, role map, project file map,
