@@ -6,6 +6,7 @@ max_loop_iterations = 3
 [[roles]]
 name = "planner"
 agent_profile = "planner"
+depends_on = []
 
 [[roles]]
 name = "backend"

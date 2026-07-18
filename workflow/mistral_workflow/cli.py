@@ -1,5 +1,4 @@
 import json
-import shutil
 import sys
 from importlib import resources
 from pathlib import Path
@@ -11,34 +10,62 @@ from mistral_workflow.loop_engine import retry_qa_gate, run_workflow
 from mistral_workflow.planner import role_log_path
 from mistral_workflow.roles import WorkflowManifest, load_manifest, manifest_path
 
-DEFAULT_ROLES = ["planner", "backend", "qa", "reviewer"]
+CORE_ROLES = ["planner", "backend", "qa", "reviewer"]
+EXTRA_ROLES = ["security", "devops", "frontend", "docs"]
+
+# Static depends_on topology for the full role set. Edges pointing at a role
+# that isn't active (an extra role the caller didn't select) are dropped, so
+# e.g. with no extras qa's edges collapse to just ["backend"].
+ROLE_DEPENDS_ON: dict[str, list[str]] = {
+    "planner": [],
+    "backend": [],
+    "frontend": ["backend"],
+    "security": ["backend"],
+    "qa": ["backend", "frontend"],
+    "devops": ["qa"],
+    "reviewer": ["qa", "security"],
+    "docs": ["reviewer"],
+}
+# Declaration order for the manifest — keeps a stable, readable role list.
+ALL_ROLES = ["planner", "backend", "frontend", "security", "qa", "devops", "reviewer", "docs"]
 
 
-def _render_workflow_toml(goal: str, gates: list[str], max_loop_iterations: int) -> str:
+def _render_workflow_toml(
+    goal: str, gates: list[str], max_loop_iterations: int, extra_roles: list[str]
+) -> str:
+    active = set(CORE_ROLES) | set(extra_roles)
+    lines = [
+        "[project]",
+        f"goal = {json.dumps(goal)}",
+        f"gates = {json.dumps(gates)}",
+        f"max_loop_iterations = {max_loop_iterations}",
+    ]
+    for role in (r for r in ALL_ROLES if r in active):
+        deps = [dep for dep in ROLE_DEPENDS_ON[role] if dep in active]
+        lines += ["", "[[roles]]", f'name = "{role}"', f'agent_profile = "{role}"', f"depends_on = {json.dumps(deps)}"]
+    return "\n".join(lines) + "\n"
+
+
+def _mcp_config_toml(project_dir: Path) -> str:
     return f"""\
-[project]
-goal = {json.dumps(goal)}
-gates = {json.dumps(gates)}
-max_loop_iterations = {max_loop_iterations}
+[[mcp_servers]]
+name = "blackboard"
+transport = "stdio"
+command = "mistral-workflow-mcp"
+env = {{ "MISTRAL_WORKFLOW_PROJECT_DIR" = {json.dumps(str(project_dir))} }}
+"""
 
-[[roles]]
-name = "planner"
-agent_profile = "planner"
 
-[[roles]]
-name = "backend"
-agent_profile = "backend"
-depends_on = []
-
-[[roles]]
-name = "qa"
-agent_profile = "qa"
-depends_on = ["backend"]
-
-[[roles]]
-name = "reviewer"
-agent_profile = "reviewer"
-depends_on = ["qa"]
+def _hooks_config_toml() -> str:
+    return """\
+[[hooks]]
+name = "require-reviewer-approval"
+type = "pre_tool"
+match = "bash"
+command = "mistral-workflow-guard-push"
+strict = true
+timeout = 10.0
+description = "Block git push until the Blackboard has a GO decision from reviewer."
 """
 
 
@@ -69,12 +96,19 @@ def workflow() -> None:
 @click.option("--gates", default="tests", help="Comma-separated quality gates (e.g. tests,lint).")
 @click.option("--max-loop-iterations", default=3, show_default=True, type=int)
 @click.option(
+    "--extra-roles",
+    default="",
+    help=f"Comma-separated bonus roles to add: {','.join(EXTRA_ROLES)}",
+)
+@click.option(
     "--project-dir",
     default=".",
     type=click.Path(file_okay=False, path_type=Path),
     help="Target project directory (defaults to cwd).",
 )
-def init(goal: str | None, gates: str, max_loop_iterations: int, project_dir: Path) -> None:
+def init(
+    goal: str | None, gates: str, max_loop_iterations: int, extra_roles: str, project_dir: Path
+) -> None:
     """Generate .vibe/workflow.toml and copy role agent profiles into the project."""
     project_dir = project_dir.resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -83,23 +117,35 @@ def init(goal: str | None, gates: str, max_loop_iterations: int, project_dir: Pa
         goal = click.prompt("Project goal")
     gates_list = [g.strip() for g in gates.split(",") if g.strip()]
 
+    extras = [r.strip() for r in extra_roles.split(",") if r.strip()]
+    unknown = set(extras) - set(EXTRA_ROLES)
+    if unknown:
+        click.echo(f"Unknown extra role(s) {sorted(unknown)}. Choose from: {EXTRA_ROLES}", err=True)
+        sys.exit(1)
+    active_roles = CORE_ROLES + extras
+
     vibe_dir = project_dir / ".vibe"
     agents_dir = vibe_dir / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_file = manifest_path(project_dir)
-    manifest_file.write_text(_render_workflow_toml(goal, gates_list, max_loop_iterations))
+    manifest_file.write_text(_render_workflow_toml(goal, gates_list, max_loop_iterations, extras))
 
     templates_dir = resources.files("mistral_workflow").joinpath("templates/roles")
-    for role_name in DEFAULT_ROLES:
+    for role_name in active_roles:
         src = templates_dir.joinpath(f"{role_name}.toml")
         dest = agents_dir / f"{role_name}.toml"
         dest.write_text(src.read_text())
 
+    (vibe_dir / "config.toml").write_text(_mcp_config_toml(project_dir))
+    (vibe_dir / "hooks.toml").write_text(_hooks_config_toml())
+
     Blackboard(blackboard_path(project_dir)).reset()
 
     click.echo(f"Wrote {manifest_file}")
-    click.echo(f"Wrote {len(DEFAULT_ROLES)} agent profiles to {agents_dir}")
+    click.echo(f"Wrote {len(active_roles)} agent profiles to {agents_dir}")
+    click.echo(f"Wrote {vibe_dir / 'config.toml'} (blackboard MCP server)")
+    click.echo(f"Wrote {vibe_dir / 'hooks.toml'} (git-push gate)")
     click.echo("Run `mistral workflow run` to start the team.")
 
 

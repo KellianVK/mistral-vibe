@@ -1,0 +1,3 @@
+display_name = "DevOps Engineer"
+description = "Prepares run/deploy tooling once tests pass"
+bypass_tool_permissions = true

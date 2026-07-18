@@ -17,3 +17,4 @@ visualizer/dist/
 .vibe/workflow-state.json
 *.log
 .DS_Store
+.claude/*.lock

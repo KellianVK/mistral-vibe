@@ -1,0 +1,3 @@
+display_name = "Docs Writer"
+description = "Documents the final, reviewed state of the project"
+bypass_tool_permissions = true

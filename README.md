@@ -1,8 +1,9 @@
 # mistral workflow
 
 Orchestrates a team of persistent [Mistral Vibe](https://github.com/KellianVK/mistral-vibe) agent
-sessions (Planner, Backend, QA, Reviewer) on a project, with a shared Blackboard for
-cross-agent memory and a live ReactFlow graph of the team's status in the browser.
+sessions (Planner, Backend, QA, Reviewer — plus optional Security, DevOps, Frontend, Docs) on a
+project, with a shared Blackboard for cross-agent memory and a live ReactFlow graph of the
+team's status in the browser.
 
 ```
 mistral workflow init   → generates .vibe/workflow.toml + agent profiles for a target project
@@ -47,15 +48,33 @@ To replay from scratch (fresh goal, fresh bug):
 
 ```bash
 cd demo-project
-rm -f calculator.py test_calculator.py && rm -rf .vibe/logs .vibe/workflow-state.json
+# QA names its own test file each run, so glob rather than hardcode one name:
+rm -f calculator.py *test*.py && rm -rf .vibe/logs .vibe/workflow-state.json __pycache__
 printf 'def add(a, b):\n    return a - b\n' > calculator.py
 mistral workflow init --goal "There is an existing calculator.py with an add(a, b) function used elsewhere in the codebase — do not modify add() itself. Add a multiply(a, b) function to calculator.py, matching the existing code style. Tests must cover every function in the module, both new and pre-existing."
 mistral workflow run
 ```
 
 Other commands: `mistral workflow status`, `mistral workflow agents`, `mistral workflow logs
---agent <role>`, `mistral workflow memory` (raw Blackboard JSON), `mistral workflow loop`
-(manually retry a currently-blocked QA gate).
+--agent <role>`, `mistral workflow memory` (raw Blackboard JSON) / `--replay` (readable
+narrative), `mistral workflow loop` (manually retry a currently-blocked QA gate).
+
+### Bonus roles
+
+`mistral workflow init --extra-roles security,devops,frontend,docs` adds any subset of four
+extra roles to the team. Topology (edges to a role you didn't select are dropped):
+
+```
+planner    backend
+             ├── frontend ──┐
+             └── security ──┼── qa ── devops
+                             └── reviewer ── docs
+```
+`frontend`/`security` run once `backend` is done; `qa` waits on both `backend` and `frontend`;
+`reviewer` waits on `qa` and `security`; `devops`/`docs` run last. Verified structurally
+(manifest parses, topological order resolves correctly) and against a live single-role session
+per role type — not re-run as a full 8-role live demo by default, since the 4-role scenario is
+the one built for reliability under demo conditions.
 
 ## How it works
 
@@ -76,17 +95,29 @@ Other commands: `mistral workflow status`, `mistral workflow agents`, `mistral w
   `RESULT: PASS`, it republishes the full test failure to the Blackboard, re-runs Backend
   (which now sees that failure as context), then re-runs QA — up to `max_loop_iterations`
   times before marking the gate `blocked` and stopping for good. It never retries forever.
+- **Agents can also read/write the Blackboard directly.** `mistral workflow init` writes
+  `.vibe/config.toml` wiring up `blackboard/mcp_server.py` as a real stdio MCP server
+  (`publish_decision`/`read_decisions`/`request_review`/`update_status`, exposed to each
+  session as `blackboard_*` tools) and `.vibe/hooks.toml` with a `pre_tool`/`bash` hook that
+  denies `git push` until the Blackboard has a `GO` decision from `reviewer`. Both are
+  orchestrator-independent — verified with the real MCP client SDK and with a live Vibe
+  session actually getting its `git push` denied by the hook, not just by calling the scripts
+  directly. The orchestrator's own status/decision writes (reliable, deterministic) still drive
+  the core loop; the MCP tools are an additional channel mainly exercised via
+  `blackboard_request_review`, which every role is told it may use to ask another role a direct
+  question — this part is best-effort (an LLM choosing to call an available tool), unlike the
+  deterministic bug-injection loop.
 
 ## Simplifications assumed (documented here rather than hidden)
 
 - **Orchestration is external.** Roles are driven from outside each Vibe session via
   subprocess, not via Vibe's own `task`-tool subagent delegation. Simpler to build and to
   reason about in the time available; see NOTES-FORK.md Q3 for the alternative.
-- **Blackboard access is orchestrator-side, not agent-side.** Roles don't call an MCP tool or
-  hit an HTTP endpoint themselves to read/write the Blackboard — the Python orchestrator does
-  it around each subprocess call. A real MCP stdio server for the Blackboard
-  (`blackboard/mcp_server.py`) was scoped as a Phase 4 stretch goal and traded for reliability
-  under time pressure.
+- **Blackboard writes that the demo depends on stay orchestrator-side.** Agents *can* call the
+  `blackboard_*` MCP tools directly (see above), but role status/decisions/QA-pass-fail — the
+  signals the Loop Engine and the visualizer depend on — are always written by the Python
+  orchestrator around each subprocess call, not left to an LLM remembering to call a tool.
+  MCP is additive, not load-bearing.
 - **The Loop Engine only closes the QA↔Backend loop**, not Reviewer. A Reviewer `NO-GO`
   currently gets logged as a decision but does not block the run or trigger a retry — worth
   knowing if you see "completed successfully" alongside a `NO-GO` decision in the log.

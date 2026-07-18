@@ -60,7 +60,32 @@ ROLE_TASK_FRAMING = {
     ),
     "reviewer": (
         "Review the code and test results produced so far for correctness and quality. Do "
-        "not rewrite the implementation yourself. Give a short go/no-go verdict and why."
+        "not rewrite the implementation yourself. Your final message MUST start with a line "
+        "that is exactly 'GO' or 'NO-GO', followed by why. A team hook uses this exact verdict "
+        "to decide whether `git push` is allowed, so it must reflect your real judgment."
+    ),
+    "security": (
+        "Review the code Backend just produced for security issues: injection, unsafe "
+        "deserialization, hardcoded secrets, missing input validation, auth/authorization "
+        "flaws. Do not rewrite the implementation yourself. If you find something Backend "
+        "needs to address, use the blackboard_request_review tool (role='security', "
+        "target_role='backend', question=...) to ask them directly, then summarize what you "
+        "checked and found."
+    ),
+    "devops": (
+        "Prepare whatever a real deploy/run setup needs based on what Backend and QA have "
+        "already produced — e.g. a run command, a minimal CI config, a dependency/lockfile "
+        "check. Do not change application logic."
+    ),
+    "frontend": (
+        "Implement a minimal UI or client against the interface Backend produced, matching "
+        "the team's goal. If Backend's interface is unclear or missing something you need, "
+        "use the blackboard_request_review tool (role='frontend', target_role='backend', "
+        "question=...) to ask them directly rather than guessing."
+    ),
+    "docs": (
+        "Write or update documentation describing what the team built, based on the final "
+        "reviewed implementation and test results. Do not change application code."
     ),
 }
 
@@ -75,18 +100,28 @@ def build_prompt(
     decisions_str = "\n".join(f"- [{d['role']}] {d['summary']}" for d in decisions) or "(none yet)"
     framing = ROLE_TASK_FRAMING.get(role.agent_profile, f"Perform your role as {role.name}.")
 
+    open_questions = [q for q in blackboard.state()["questions"] if not q["resolved"] and q["to"] == role.name]
+    questions_block = ""
+    if open_questions:
+        questions_str = "\n".join(f"- [{q['from']}] {q['question']}" for q in open_questions)
+        questions_block = f"Open questions for you from teammates:\n{questions_str}\n"
+
     parts = [
         f"You are '{role.name}' on an autonomous engineering team. Team goal: {manifest.project.goal}",
         "",
         "Decisions logged by the team so far:",
         decisions_str,
         "",
+        questions_block,
         f"Your task: {framing}",
     ]
     if extra_context:
         parts += ["", extra_context]
     parts += [
         "",
+        "If a blackboard_* MCP tool is available, you may use blackboard_request_review to "
+        "ask another role a direct question when you have one — otherwise just answer in your "
+        "final message as usual.",
         "End your final message with a line starting with 'SUMMARY:' — one sentence for the team log.",
     ]
     return "\n".join(parts)
@@ -109,6 +144,21 @@ def extract_qa_result(final_text: str) -> bool | None:
             return True
         if stripped.startswith("RESULT: FAIL"):
             return False
+    return None
+
+
+def extract_reviewer_verdict(text: str) -> bool | None:
+    """True for GO, False for NO-GO. Works on a full final_text (checks each
+    line) or a single already-extracted decision summary (splitlines() on a
+    one-line string just yields that line) — the git-push guard hook reuses
+    this against stored Blackboard decisions, not raw model output.
+    """
+    for line in text.splitlines():
+        stripped = line.strip().upper()
+        if stripped.startswith("NO-GO"):
+            return False
+        if stripped.startswith("GO"):
+            return True
     return None
 
 
@@ -146,6 +196,16 @@ def run_single_role(
         blackboard.publish_decision(role.name, f"FAIL: {detail}")
         blackboard.update_status(role.name, "blocked", current_task="tests failing or inconclusive")
         return RoleOutcome(success=True, qa_passed=False, summary=summary)
+
+    if role.agent_profile == "reviewer":
+        # Store the verdict as an explicit "GO:"/"NO-GO:" prefix on the
+        # decision itself — the git-push guard hook reads this back from the
+        # Blackboard and needs a reliable signal, not free text to re-parse.
+        verdict = extract_reviewer_verdict(result.final_text)
+        prefix = "NO-GO" if verdict is False else "GO" if verdict is True else "UNCLEAR"
+        blackboard.publish_decision(role.name, f"{prefix}: {summary}")
+        blackboard.update_status(role.name, "done", current_task=summary)
+        return RoleOutcome(success=True, qa_passed=None, summary=summary)
 
     blackboard.publish_decision(role.name, summary)
     blackboard.update_status(role.name, "done", current_task=summary)

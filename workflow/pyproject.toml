@@ -8,11 +8,14 @@ dependencies = [
     "pydantic>=2.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "mcp>=1.20",
 ]
 
 [project.scripts]
 mistral = "mistral_workflow.cli:main"
 mistral-workflow-api = "mistral_workflow.blackboard.api:main"
+mistral-workflow-mcp = "mistral_workflow.blackboard.mcp_server:main"
+mistral-workflow-guard-push = "mistral_workflow.hooks.guard_push:main"
 
 [build-system]
 requires = ["hatchling"]
