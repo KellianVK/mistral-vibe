@@ -283,6 +283,13 @@ def _cleanup_worktree_on_exit(worktree: PreparedWorktree) -> None:
 
 
 def main() -> None:
+    # `vibe workflow ...` dispatches to the MiaouFlow orchestrator before the
+    # flat parser below can swallow "workflow" as the initial prompt.
+    if len(sys.argv) > 1 and sys.argv[1] == "workflow":
+        from vibe.workflow.entrypoint import main as workflow_main
+
+        sys.exit(workflow_main(sys.argv[2:]))
+
     from vibe.core.utils.windows_asyncio import (
         silence_proactor_transport_teardown_warnings,
     )
