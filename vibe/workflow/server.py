@@ -49,9 +49,80 @@ def _board_state(workdir: Path) -> dict[str, Any]:
             "decisions": [],
             "questions": [],
             "claims": [],
+            "messages": [],
+            "broadcasts": [],
+            "changes": [],
             "timings": {},
         }
     return read_board_state(database_path)
+
+
+def _role_logs(workdir: Path, role: str) -> list[dict[str, Any]]:
+    """Parsed NDJSON transcript of one worker, trimmed for the Logs tab."""
+    safe_role = "".join(ch for ch in role.lower() if ch.isalnum() or ch in "-_")
+    log_path = workdir / "logs" / f"{safe_role}.jsonl"
+    if not log_path.is_file():
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in log_path.read_text(encoding="utf-8").splitlines()[-200:]:
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(message, dict) or message.get("role") == "system":
+            continue
+        tool_calls = message.get("tool_calls") or []
+        entries.append({
+            "role": message.get("role"),
+            "content": (message.get("content") or "")[:2000],
+            "tools": [
+                call.get("function", {}).get("name")
+                for call in tool_calls
+                if isinstance(call, dict)
+            ],
+            "tool_name": message.get("name"),
+        })
+    return entries
+
+
+def _system_info(workdir: Path) -> dict[str, Any]:
+    """What MiaouFlow provisioned: agent profiles, tools, prompts, db."""
+    from vibe.core.tools.builtins import blackboard
+
+    agents_dir = workdir / ".vibe" / "agents"
+    profiles: list[dict[str, str]] = []
+    if agents_dir.is_dir():
+        for profile in sorted(agents_dir.glob("*.toml")):
+            profiles.append({
+                "name": profile.stem,
+                "content": profile.read_text(encoding="utf-8"),
+            })
+
+    tool_classes = [
+        blackboard.PublishDecision,
+        blackboard.ReadDecisions,
+        blackboard.UpdateStatus,
+        blackboard.RequestReview,
+        blackboard.AnswerQuestion,
+        blackboard.ReadQuestions,
+        blackboard.ClaimFile,
+        blackboard.ReleaseFile,
+        blackboard.SendMessage,
+        blackboard.Broadcast,
+        blackboard.ReadInbox,
+    ]
+    tools = [
+        {"name": cls.get_name(), "description": cls.description} for cls in tool_classes
+    ]
+
+    prompts_dir = Path(__file__).resolve().parent / "prompts"
+    prompts = sorted(p.stem for p in prompts_dir.glob("*.md"))
+    return {
+        "database": str(workflow_database_path(workdir)),
+        "agent_profiles": profiles,
+        "blackboard_tools": tools,
+        "role_prompts": prompts,
+    }
 
 
 def _manifest(workdir: Path) -> dict[str, Any]:
@@ -60,9 +131,12 @@ def _manifest(workdir: Path) -> dict[str, Any]:
     if run is None:
         return {"project": None, "roles": []}
 
+    from vibe.workflow.roles import load_custom_roles
+
+    custom = load_custom_roles(workdir)
     agents: dict[str, Any] = state.get("agents", {})
-    active = set(agents) | set(DEFAULT_ACTIVE_ROLES)
-    roles = [role for role in DEFAULT_ROLES if role.name in active]
+    active = set(agents) | set(DEFAULT_ACTIVE_ROLES) | {r.name for r in custom}
+    roles = [role for role in (*DEFAULT_ROLES, *custom) if role.name in active]
     return {
         "project": {"goal": run["goal"], "gates": [], "max_loop_iterations": 1},
         "roles": manifest_payload(roles),
@@ -98,9 +172,59 @@ def create_app(workdir: Path) -> Starlette:
         del request
         return HTMLResponse(_MISSING_BOARD_PAGE)
 
+    async def get_logs(request: Request) -> JSONResponse:
+        role = request.query_params.get("role", "")
+        if not role:
+            return JSONResponse({"error": "role query param required"}, status_code=400)
+        entries = await asyncio.to_thread(_role_logs, resolved_workdir, role)
+        return JSONResponse({"role": role, "entries": entries})
+
+    async def get_system(request: Request) -> JSONResponse:
+        del request
+        return JSONResponse(await asyncio.to_thread(_system_info, resolved_workdir))
+
+    async def post_agent(request: Request) -> JSONResponse:
+        from vibe.workflow.roles import RoleSpec, save_custom_role
+        from vibe.workflow.setup import configure_workdir
+
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        name = str(body.get("name") or "").strip()
+        objective = str(body.get("objective") or "").strip()
+        if not name or not objective:
+            return JSONResponse(
+                {"error": "name and objective are required"}, status_code=400
+            )
+        role = RoleSpec(
+            name=name,
+            agent_profile="".join(c for c in name.lower() if c.isalnum() or c == "-")
+            or "custom",
+            model=str(body.get("model") or "devstral-small"),
+            objective=objective,
+            depends_on=tuple(body.get("depends_on") or ("Planner",)),
+        )
+        try:
+            await asyncio.to_thread(save_custom_role, resolved_workdir, role)
+            await asyncio.to_thread(configure_workdir, resolved_workdir, [role])
+        except Exception as error:
+            return JSONResponse({"error": str(error)}, status_code=409)
+        return JSONResponse(
+            {
+                "ok": True,
+                "role": role.name,
+                "note": "The agent joins the team on the next run.",
+            },
+            status_code=201,
+        )
+
     routes: list[Route | WebSocketRoute | Mount] = [
         Route("/state", get_state),
         Route("/manifest", get_manifest),
+        Route("/logs", get_logs),
+        Route("/system", get_system),
+        Route("/agents", post_agent, methods=["POST"]),
         WebSocketRoute("/ws", ws_state),
     ]
     if BOARD_DIST_DIR.is_dir():
