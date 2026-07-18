@@ -19,6 +19,7 @@ export function DecisionFeed({ decisions }: { decisions: Decision[] }) {
             <li key={i} className="feed__item">
               <div className="feed__meta">
                 <span className="feed__role">{d.role}</span>
+                {d.topic && <span className="feed__topic">{d.topic}</span>}
                 <span className="feed__time">{formatTime(d.ts)}</span>
               </div>
               <p className="feed__text">{d.summary}</p>
