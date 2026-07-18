@@ -1,0 +1,40 @@
+/*
+ * Design tokens sourced from the actual Vibe CLI, not invented:
+ * - $mistral_orange from vibe/cli/textual_ui/app.tcss
+ * - all other hex values extracted from rendered Vibe snapshots at
+ *   tests/snapshots/__snapshots__/test_ui_snapshot_*.svg
+ */
+:root {
+  --bg: #121212;
+  --surface: #1a1a1a;
+  --surface-raised: #292929;
+  --surface-border: rgba(255, 255, 255, 0.12);
+
+  --text: #c5c8c6;
+  --text-bright: #e0e0e0;
+  --text-muted: #868887;
+  --text-faint: #4b4e55;
+
+  --accent: #ff8205; /* Mistral orange — sparse: active/live/primary focus only */
+  --info: #68a0b3; /* secondary accent: links, keybind hints, section labels */
+
+  --success: #4ebf71; /* done */
+  --warning: #d4a72c; /* blocked — distinct from --accent */
+  --error: #e0654f; /* offline / failed */
+
+  --radius-sm: 4px;
+  --radius: 6px;
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --motion-fast: 120ms;
+  --motion: 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion: 0ms;
+  }
+}

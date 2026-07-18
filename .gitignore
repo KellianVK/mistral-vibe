@@ -36,14 +36,14 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -194,17 +194,25 @@ result
 result-*
 
 # Vibe runtime/session files; keep selected project skills as part of repo
-.vibe/*
-!.vibe/skills/
-.vibe/skills/*
-!.vibe/skills/create-vibe-feature/
-!.vibe/skills/create-vibe-feature/**
-!.vibe/skills/instrument-feature-analytics/
-!.vibe/skills/instrument-feature-analytics/**
-!.vibe/skills/write-vibe-adr/
-!.vibe/skills/write-vibe-adr/**
-!.vibe/skills/write-vibe-tests/
-!.vibe/skills/write-vibe-tests/**
+/.vibe/*
+!/.vibe/skills/
+/.vibe/skills/*
+!/.vibe/skills/create-vibe-feature/
+!/.vibe/skills/create-vibe-feature/**
+!/.vibe/skills/instrument-feature-analytics/
+!/.vibe/skills/instrument-feature-analytics/**
+!/.vibe/skills/write-vibe-adr/
+!/.vibe/skills/write-vibe-adr/**
+!/.vibe/skills/write-vibe-tests/
+!/.vibe/skills/write-vibe-tests/**
+
+# MiaouFlow (vibe workflow) runtime artifacts
+workflow.db
+workflow.db-*
+visualizer/node_modules/
+visualizer/dist/
+demo-project/logs/
+demo-project/.vibe/workflow-state.json
 
 # Tests run the agent in the playground, we don't need to keep the session files
 tests/playground/*

@@ -144,6 +144,7 @@ include = ["vibe/"]
 [project.scripts]
 vibe = "vibe.cli.entrypoint:main"
 vibe-acp = "vibe.acp.entrypoint:main"
+vibe-workflow = "vibe.workflow.entrypoint:main"
 
 [tool.uv]
 exclude-newer = "2 days"
