@@ -12,7 +12,9 @@ pkill -f "vibe workflow" ; pkill -f "python -m vibe"
 D=/tmp/demo-full && rm -rf $D && mkdir -p $D
 printf 'def score_for_match(current_score):\n    return current_score - 10  # bug volontaire: une paire doit AJOUTER 10 points\n' > $D/game_logic.py
 printf 'flask\npytest\n' > $D/requirements.txt
-vibe workflow run --goal "Build a visually polished cat-themed memory card game. Flask app in server/app.py serving web/index.html: an animated 4x4 grid of cat-emoji cards with CSS flip animations, a bold orange-gradient design, and a live score display. Scoring MUST go through game_logic.score_for_match via a POST /match endpoint: a matched pair ADDS 10 points. QA: unit-test game_logic.score_for_match against its mathematical promise (score_for_match(0)==10, score_for_match(10)==20) and fail the verdict if wrong. Backend: fix exactly what QA reports. Keep everything small and runnable." --workdir $D --no-board --timeout 900
+#    (sans Security : son audit, volontairement strict, est non-déterministe
+#     sur une app de démo — il vit dans le run LIVE et le board de backup)
+vibe workflow run --roles Planner,Backend,Frontend,QA,Docs,Reviewer --goal "Build a cat-themed memory card game with a clear split: BACKEND owns server/app.py ONLY — a small Flask app that serves the static web/ directory and exposes POST /match which MUST use game_logic.score_for_match to return the new score; bind to 127.0.0.1, debug OFF; publish the /match contract early. IMPORTANT: game_logic.py is under QA authority — Backend must NOT modify game_logic.py during initial implementation, only if QA's verdict reports a failure in it. FRONTEND owns web/index.html ONLY — a single self-contained page: animated 4x4 grid of cat-emoji cards with CSS flip animations, bold orange-gradient design, live score display updated from POST /match. QA: unit-test game_logic.score_for_match against its mathematical promise (score_for_match(0)==10, score_for_match(10)==20) plus one Flask test_client check of /match, and FAIL the verdict if the scoring is wrong. On a QA failure report, Backend fixes exactly what QA reports, nothing else. Keep everything small." --workdir $D --no-board --timeout 1200
 # (~10-15 min ; vérifier à la fin : QA FAIL -> retry -> PASS, verdict GO du Reviewer)
 
 # 3. Servir ce board pré-calculé sur un port séparé (onglet 2 du navigateur)
@@ -94,7 +96,10 @@ Montrer sur 8790 :
 1. Feed : verdict QA **`FAIL:`** → Messages : broadcast **« Orchestrator: QA
    failed — retry 1/3 »** → Backend re-passé `working` → verdict **`PASS:`**.
    *« La boucle qualité est automatique et bornée. »*
-2. Les messages de **Security** vers Backend (audit sans droit d'écriture).
+2. Les messages inter-agents dans **Messages** (kickoff du Planner, contrat
+   de Backend). Pour l'histoire Security : elle se joue en live sur l'onglet
+   1 (l'audit y tourne), et le board de backup 8789 montre un vrai
+   « Security FAIL → Reviewer NO-GO » si un juré demande.
 3. Le verdict **`GO:`** du Reviewer dans le feed. Puis dans un second
    terminal (la variable HOOK une fois pour toutes) :
    ```sh
