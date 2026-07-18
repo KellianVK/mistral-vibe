@@ -116,7 +116,16 @@ DEFAULT_ROLES: tuple[RoleSpec, ...] = (
     ),
 )
 
-DEFAULT_ACTIVE_ROLES: tuple[str, ...] = ("Planner", "Backend", "Frontend")
+DEFAULT_ACTIVE_ROLES: tuple[str, ...] = (
+    "Planner",
+    "Backend",
+    "Frontend",
+    "QA",
+    "Security",
+    "DevOps",
+    "Docs",
+    "Reviewer",
+)
 
 FULL_TEAM_BASE: tuple[str, ...] = (
     "Planner",

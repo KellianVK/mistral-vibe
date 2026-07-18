@@ -452,7 +452,11 @@ async def test_run_workflow_runs_waves_in_order_with_parallel_second_wave(
     monkeypatch.setattr(orchestrator, "_verify_published_decision", fake_verify)
 
     results = await orchestrator.run_workflow(
-        "Build a Todo API", workdir, warm_start=False, environment={}
+        "Build a Todo API",
+        workdir,
+        role_names=["Planner", "Backend", "Frontend"],
+        warm_start=False,
+        environment={},
     )
 
     assert lifecycle[:2] == ["start:Planner", "finish:Planner"]

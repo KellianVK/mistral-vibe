@@ -15,7 +15,8 @@ for run in 1 2; do
   cp -R "$REPO/demo-project" "$DEST"
   echo "=== Rehearsal run $run/2 (timeout ${TIMEOUT}s) ==="
   (cd "$REPO" && uv run python -m vibe workflow run \
-    --goal "$GOAL" --workdir "$DEST" --no-board --timeout "$TIMEOUT")
+    --goal "$GOAL" --workdir "$DEST" --roles Planner,Backend,Frontend \
+    --no-board --timeout "$TIMEOUT")
 
   DB="$DEST/.vibe/workflow.db"
   DECISIONS=$(sqlite3 "$DB" "select count(*) from decisions")

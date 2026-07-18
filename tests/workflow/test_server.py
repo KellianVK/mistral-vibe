@@ -67,7 +67,8 @@ def test_manifest_lists_active_roles_with_dependencies(tmp_path: Path) -> None:
 
     assert manifest["project"]["goal"] == "Todo API with JWT auth"
     names = [role["name"] for role in manifest["roles"]]
-    assert names == ["Planner", "Backend", "Frontend"]
+    assert names[:3] == ["Planner", "Backend", "Frontend"]
+    assert {"QA", "Security", "DevOps", "Docs", "Reviewer"} <= set(names)
     backend = next(role for role in manifest["roles"] if role["name"] == "Backend")
     assert backend["depends_on"] == ["Planner"]
 

@@ -731,10 +731,11 @@ coordinate through a shared SQLite blackboard, with a live web board
   `/workflow <goal>` starts the team in the background via the
   `start_workflow` tool (the session stays usable), `/workflow status`
   summarizes per-agent state, `/workflow stop` cancels.
-- Roles: Planner, Backend, Frontend by default; QA, Security, DevOps, Docs,
-  Reviewer via `--roles` or `init`. Waves run in parallel; a QA `FAIL:`
-  verdict triggers a bounded retry loop; the Reviewer's `GO:` verdict gates
-  `git push` through a pre_tool hook.
+- Roles: the full team by default — Planner, Backend, Frontend, QA,
+  Security, DevOps, Docs, Reviewer (subset via `--roles`, or the team
+  composed by `init`). Waves run in parallel; a QA `FAIL:` verdict triggers
+  a bounded retry loop; the Reviewer's `GO:` verdict gates `git push`
+  through a pre_tool hook.
 - Agents get 11 blackboard tools (decisions, questions, claims, status,
   messaging) visible only inside workflow workers; role identity is pinned
   by the orchestrator. Planner/Reviewer cannot write files or run bash;

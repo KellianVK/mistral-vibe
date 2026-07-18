@@ -17,6 +17,11 @@ Attendu : `19 PASS, 0 FAIL`.
 
 ## 1a. /workflow dans la session interactive (le mode "comme Kellian")
 
+> Par défaut, un run utilise **toute l'équipe de 8 agents** (~10-15 min,
+> jusqu'à ~16 $). Pour un test rapide/pas cher, utilisez
+> `--roles Planner,Backend,Frontend` (scénario 1b) — le script de
+> répétition le fait déjà.
+
 ```sh
 cd demo-project && uv --project .. run vibe
 # puis, dans la session :
@@ -30,10 +35,11 @@ L'assistant appelle `start_workflow` (mêmes vagues, même boucle qualité que
 la session reste utilisable pendant que l'équipe tourne en arrière-plan.
 Les trois outils sont invisibles dans les workers (pas d'équipes récursives).
 
-## 1b. Démo standard — sous-commande (~2-4 min, ~2-4 $)
+## 1b. Démo rapide — trio seulement (~2-4 min, ~2-4 $)
 
 ```sh
 uv run vibe workflow run \
+  --roles Planner,Backend,Frontend \
   --goal "Build a small Todo API with JWT auth: Flask app in server/app.py with POST /auth/register and POST /auth/login returning {token, expires_in}, and /todos CRUD guarded by the JWT. Frontend: a minimal web/index.html client. Keep everything small and runnable." \
   --workdir demo-project
 ```

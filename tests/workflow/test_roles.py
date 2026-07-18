@@ -5,9 +5,18 @@ import pytest
 from vibe.workflow import roles
 
 
-def test_default_selection_is_planner_backend_frontend() -> None:
+def test_default_selection_is_the_full_team() -> None:
     selected = roles.select_roles(None)
-    assert [role.name for role in selected] == ["Planner", "Backend", "Frontend"]
+    assert [role.name for role in selected] == [
+        "Planner",
+        "Backend",
+        "Frontend",
+        "QA",
+        "Security",
+        "DevOps",
+        "Docs",
+        "Reviewer",
+    ]
 
 
 def test_selection_is_case_insensitive_and_rejects_unknown() -> None:
