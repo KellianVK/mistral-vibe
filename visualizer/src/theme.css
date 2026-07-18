@@ -16,6 +16,8 @@
   --text-faint: #4b4e55;
 
   --accent: #ff8205; /* Mistral orange — sparse: active/live/primary focus only */
+  /* Mistral brand flag gradient (mistral.ai/brand), used for the MiaouFlow identity */
+  --mistral-gradient: linear-gradient(90deg, #ffd800, #ffaf00, #ff8205, #fa500f, #e10500);
   --info: #68a0b3; /* secondary accent: links, keybind hints, section labels */
 
   --success: #4ebf71; /* done */

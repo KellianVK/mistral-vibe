@@ -18,8 +18,8 @@ function App() {
         <div className="app-body__main">
           {manifest.roles.length === 0 ? (
             <div className="empty-state">
-              No workflow yet — run <code>mistral workflow init</code> then{" "}
-              <code>mistral workflow run</code> in the target project.
+              No workflow yet — run{" "}
+              <code>vibe workflow run --goal "..."</code> in the target project.
             </div>
           ) : (
             <TeamCanvas manifest={manifest} state={state} />

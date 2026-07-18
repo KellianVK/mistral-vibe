@@ -7,16 +7,20 @@ export interface AgentState {
 }
 
 export interface Decision {
+  id?: number;
   role: string;
+  topic?: string | null;
   summary: string;
   artifact: string | null;
   ts: string;
 }
 
 export interface Question {
+  id?: number;
   from: string;
   to: string;
   question: string;
+  answer?: string | null;
   resolved: boolean;
   ts?: string;
 }
@@ -27,11 +31,28 @@ export interface FileClaim {
   ts: string;
 }
 
+export interface RoleTiming {
+  spawned_at: string | null;
+  first_action_s: number | null;
+  turns: number;
+  avg_turn_s: number | null;
+  total_s: number | null;
+}
+
+export interface RunInfo {
+  id: number;
+  goal: string;
+  started_at: string;
+}
+
 export interface BlackboardState {
+  goal?: string | null;
+  run?: RunInfo | null;
   agents: Record<string, AgentState>;
   decisions: Decision[];
   questions: Question[];
   claims: FileClaim[];
+  timings?: Record<string, RoleTiming>;
 }
 
 export interface RoleSpec {

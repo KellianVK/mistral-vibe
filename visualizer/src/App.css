@@ -57,6 +57,7 @@
 /* WorkflowHeader */
 
 .workflow-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -67,6 +68,17 @@
   flex-shrink: 0;
 }
 
+/* Mistral flag-gradient accent bar across the top of the board */
+.workflow-header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--mistral-gradient);
+}
+
 .workflow-header__identity {
   min-width: 0;
   display: flex;
@@ -75,12 +87,35 @@
 }
 
 .workflow-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.3px;
   white-space: nowrap;
+}
+
+.workflow-header__logo {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+}
+
+.workflow-header__name {
+  background: var(--mistral-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.workflow-header__by {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
 }
 
 .workflow-header__goal {
@@ -162,6 +197,11 @@
   color: var(--error);
 }
 
+.pill--timing {
+  color: var(--info);
+  font-variant-numeric: tabular-nums;
+}
+
 @keyframes dot-blink {
   0%,
   100% {
@@ -230,11 +270,22 @@
   font-weight: 600;
 }
 
+.feed__topic {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
 .feed__time {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--text-faint);
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .feed__text {
@@ -386,6 +437,29 @@
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.agent-node__timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.agent-node__timing-chip {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.team-edge--waiting .react-flow__edge-path {
+  stroke: var(--warning);
+  stroke-dasharray: 6 3;
 }
 
 .agent-node__blocked {
