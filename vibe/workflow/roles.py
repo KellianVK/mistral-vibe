@@ -12,6 +12,7 @@ class RoleSpec:
     model: str
     objective: str
     depends_on: tuple[str, ...] = field(default=())
+    max_turns: int = 40
 
 
 PLANNER_MODEL = "mistral-medium-3.5"
@@ -26,6 +27,7 @@ DEFAULT_ROLES: tuple[RoleSpec, ...] = (
             "Decompose the goal into a concrete plan with file ownership and "
             "interface contracts, published to the blackboard."
         ),
+        max_turns=15,
     ),
     RoleSpec(
         name="Backend",
@@ -91,6 +93,7 @@ def select_roles(names: list[str] | None = None) -> list[RoleSpec]:
             model=role.model,
             objective=role.objective,
             depends_on=tuple(dep for dep in role.depends_on if dep in active_names),
+            max_turns=role.max_turns,
         )
         for role in selected
     ]
