@@ -39,7 +39,7 @@ from vibe.workflow.store import (
 )
 
 MAX_WORKFLOW_SECONDS = 10 * 60
-MAX_PRICE = "1.00"
+MAX_PRICE = "2.00"
 STREAM_LIMIT_BYTES = 10 * 1024 * 1024
 BRIEF_FILE_MAP_LIMIT = 60
 _SKIPPED_DIRS = {".git", ".vibe", "node_modules", "__pycache__", ".venv", "logs"}
