@@ -699,6 +699,17 @@ async def run_workflow(
     resolved_workdir = workdir.expanduser().resolve()
     child_environment = dict(environment if environment is not None else os.environ)
 
+    if role_names is None:
+        # A team composed by `vibe workflow init` applies to every entry
+        # point, including /workflow started from an interactive session.
+        from vibe.workflow.init_flow import load_team_config
+
+        team_config = load_team_config(resolved_workdir)
+        if team_config is not None:
+            configured = team_config.get("roles")
+            if isinstance(configured, list) and configured:
+                role_names = [str(name) for name in configured]
+
     roles = select_roles(role_names, workdir=resolved_workdir)
     waves = execution_waves(roles)
     try:
@@ -829,8 +840,7 @@ def run_workflow_command(
         if team_config is not None:
             configured = team_config.get("roles")
             if isinstance(configured, list) and configured:
-                role_names = [str(name) for name in configured]
-                print(f"Using the init team: {', '.join(role_names)}")
+                print(f"Using the init team: {', '.join(str(n) for n in configured)}")
 
     try:
         results = asyncio.run(

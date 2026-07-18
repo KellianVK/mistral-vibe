@@ -724,3 +724,41 @@ async def test_blocked_message_uses_stop_reason(
     status = read_status(database_path, "Backend")
     assert status is not None
     assert status["current_task"] == "Turn limit of 40 reached"
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_uses_init_team_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vibe.workflow.init_flow import save_team_config
+
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    save_team_config(
+        workdir, "goal", ["Planner", "Reviewer", "Backend", "QA", "Security"], False
+    )
+    launched: list[str] = []
+
+    async def fake_run_worker(
+        role: RoleSpec,
+        _goal: str,
+        _brief: str,
+        _workdir: Path,
+        database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        launched.append(role.name)
+        publish_decision(database_path, role.name, f"{role.name} delivered")
+        if role.name == "QA":
+            publish_decision(database_path, "QA", "PASS: green", topic="qa-verdict")
+        return orchestrator.WorkerResult(role=role.name, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    # role_names=None -> the init team is picked up (5 roles, not the trio).
+    await orchestrator.run_workflow("goal", workdir, warm_start=False, environment={})
+
+    assert set(launched) == {"Planner", "Reviewer", "Backend", "QA", "Security"}
+    assert "Frontend" not in launched

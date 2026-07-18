@@ -35,9 +35,11 @@ this with bash:
    here and coordinate through `.vibe/workflow.db`. Warn the user before
    starting if the directory looks like it contains unrelated
    uncommitted work.
-4. Roles come from the directory's MiaouFlow team config if `vibe workflow
-   init` was run here, else the default trio (Planner, Backend, Frontend).
-   For the full 6-8 agent team, suggest `vibe workflow init` in a terminal.
+4. Roles come from the directory's MiaouFlow team config
+   (`.vibe/workflow_team.json`, written by `vibe workflow init`) — the full
+   6-8 agent team when init was run here — else the default trio (Planner,
+   Backend, Frontend). To compose the big team, suggest running
+   `vibe workflow init` in a terminal first; /workflow then uses it.
 5. Costs money and takes minutes (a small goal ≈ 2-4 min, ~2-6 $). Say so
    when starting."""
 
