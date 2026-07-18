@@ -137,6 +137,11 @@ def init(
         dest = agents_dir / f"{role_name}.toml"
         dest.write_text(src.read_text())
 
+    skill_dir = vibe_dir / "skills" / "workflow"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_src = resources.files("mistral_workflow").joinpath("templates/skills/workflow/SKILL.md")
+    (skill_dir / "SKILL.md").write_text(skill_src.read_text())
+
     (vibe_dir / "config.toml").write_text(_mcp_config_toml(project_dir))
     (vibe_dir / "hooks.toml").write_text(_hooks_config_toml())
 
@@ -146,6 +151,7 @@ def init(
     click.echo(f"Wrote {len(active_roles)} agent profiles to {agents_dir}")
     click.echo(f"Wrote {vibe_dir / 'config.toml'} (blackboard MCP server)")
     click.echo(f"Wrote {vibe_dir / 'hooks.toml'} (git-push gate)")
+    click.echo(f"Wrote {skill_dir / 'SKILL.md'} — use /workflow inside `vibe` in this project")
     click.echo("Run `mistral workflow run` to start the team.")
 
 
