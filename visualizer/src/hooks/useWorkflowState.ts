@@ -5,7 +5,7 @@ import type { BlackboardState, ConnectionState, Manifest } from "../types";
 // Vite dev/preview servers (5173/4173) need to point at the default port.
 const VITE_DEV_PORTS = new Set(["5173", "4173"]);
 const IS_DEV_HOST = VITE_DEV_PORTS.has(window.location.port);
-const API_BASE = IS_DEV_HOST ? "http://localhost:8787" : "";
+export const API_BASE = IS_DEV_HOST ? "http://localhost:8787" : "";
 const WS_URL = IS_DEV_HOST
   ? "ws://localhost:8787/ws"
   : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
