@@ -17,4 +17,6 @@ visualizer/dist/
 .vibe/workflow-state.json
 *.log
 .DS_Store
-.claude/*.lock
+
+# Local editor/tool config — not part of the project
+.claude/
