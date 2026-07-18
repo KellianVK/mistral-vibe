@@ -7,10 +7,12 @@
 pkill -f "vibe workflow" ; pkill -f "python -m vibe"
 
 # 2. Pré-calculer le board "fin de partie" (8 agents complets + boucle qualité)
+#    Scénario : un jeu de memory des chats, très visuel — avec un bug planté
+#    dans le scoring (chaque paire trouvée fait PERDRE des points).
 D=/tmp/demo-full && rm -rf $D && mkdir -p $D
-printf 'def add(a, b):\n    return a - b  # bug volontaire\n' > $D/calculator.py
-printf 'pytest\n' > $D/requirements.txt
-vibe workflow run --goal "Extend calculator.py with multiply and a tiny web calculator UI. QA: test add and multiply against their mathematical promises and fail the verdict if wrong. Backend: fix what QA reports." --workdir $D --no-board --timeout 900
+printf 'def score_for_match(current_score):\n    return current_score - 10  # bug volontaire: une paire doit AJOUTER 10 points\n' > $D/game_logic.py
+printf 'flask\npytest\n' > $D/requirements.txt
+vibe workflow run --goal "Build a visually polished cat-themed memory card game. Flask app in server/app.py serving web/index.html: an animated 4x4 grid of cat-emoji cards with CSS flip animations, a bold orange-gradient design, and a live score display. Scoring MUST go through game_logic.score_for_match via a POST /match endpoint: a matched pair ADDS 10 points. QA: unit-test game_logic.score_for_match against its mathematical promise (score_for_match(0)==10, score_for_match(10)==20) and fail the verdict if wrong. Backend: fix exactly what QA reports. Keep everything small and runnable." --workdir $D --no-board --timeout 900
 # (~10-15 min ; vérifier à la fin : QA FAIL -> retry -> PASS, verdict GO du Reviewer)
 
 # 3. Servir ce board pré-calculé sur un port séparé (onglet 2 du navigateur)
@@ -21,13 +23,13 @@ L=/tmp/demo-live && rm -rf $L && mkdir -p $L && cd $L
 
 # 5. LANCER L'APP CONSTRUITE PAR LES AGENTS (onglet 3 du navigateur)
 #    Regarder ce que le pré-run a produit, puis la démarrer — PAS le port
-#    5000 (réservé macOS). Selon ce qui a été construit, typiquement :
+#    5000 (réservé macOS) :
 ls /tmp/demo-full
-(cd /tmp/demo-full && python3 -m flask --app server/app.py run --port 5001 &) \
-  || (cd /tmp/demo-full && python3 -m http.server 5001 &)
-#    Vérifier dans le navigateur : http://127.0.0.1:5001 (ou web/index.html).
-#    Noter la commande exacte qui marche — c'est elle qu'on montrera.
-#    Si aucune UI n'est sortie : préparer un `curl` de l'API à la place.
+(cd /tmp/demo-full && python3 -m flask --app server/app.py run --port 5001 &)
+#    Vérifier dans le navigateur : http://127.0.0.1:5001 — le jeu doit
+#    s'afficher, retourner une paire doit faire +10. Noter la commande qui
+#    marche. Repli si Flask accroche : ouvrir web/index.html directement
+#    (le visuel reste), et garder un `curl -X POST .../match` pour le score.
 
 # 6. Navigateur : onglet 1 = 8787 (vide), onglet 2 = 8790 (board complet),
 #    onglet 3 = l'app qui tourne. Enregistrement de secours prêt.
@@ -86,7 +88,7 @@ Montrer, dans l'ordre où ça arrive :
 ### 3:00 – 4:00 — La fin de partie (onglet 2, board pré-calculé)
 
 > « Voici le même système au bout de sa course, sur un projet piégé : on
-> avait planté un bug dans le code de départ. »
+> avait planté un bug dans le scoring du code de départ. »
 
 Montrer sur 8790 :
 1. Feed : verdict QA **`FAIL:`** → Messages : broadcast **« Orchestrator: QA
@@ -109,14 +111,15 @@ Montrer sur 8790 :
 
 > « Et le produit de tout ça, ce n'est pas un rapport — c'est une app. »
 
-1. Onglet **Changes** du board 8790 : cliquer `calculator.py` → **le diff du
-   fix de Backend** (`- return a - b` / `+ return a + b`) :
+1. Onglet **Changes** du board 8790 : cliquer `game_logic.py` → **le diff du
+   fix de Backend** (`- current_score - 10` / `+ current_score + 10`) :
    *« Voilà la correction que la boucle qualité a exigée, ligne par ligne. »*
-2. Onglet 3 : **l'app construite par les agents, en marche**. Taper le
-   calcul piégé : **2 + 3 → 5**.
-   *« Ce calcul-là était faux dans le code de départ. QA l'a attrapé,
-   Backend l'a corrigé, le Reviewer a validé — sans intervention humaine. »*
-   (Sans UI : `curl` de l'API en terminal, même narration.)
+2. Onglet 3 : **le jeu construit par les agents, en marche**. Retourner deux
+   cartes, matcher une paire de chats : **le score fait +10**.
+   *« Dans le code de départ, chaque paire trouvée vous faisait PERDRE dix
+   points. QA l'a attrapé, Backend l'a corrigé, le Reviewer a validé — sans
+   intervention humaine. Et accessoirement : huit agents viennent de vous
+   livrer un jeu. »*
 
 ### 4:40 – 5:00 — La chute
 
