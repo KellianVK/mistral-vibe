@@ -15,7 +15,22 @@ d'outils dans les profils générés, la porte de push (NO-GO refusé / GO
 autorisé, via le vrai hook), les 8 prompts dédiés, le board embarqué.
 Attendu : `19 PASS, 0 FAIL`.
 
-## 1. Démo standard — 3 agents (~2-4 min, ~2-4 $)
+## 1a. /workflow dans la session interactive (le mode "comme Kellian")
+
+```sh
+cd demo-project && uv --project .. run vibe
+# puis, dans la session :
+#   /workflow Build a small Todo API with JWT auth, Flask in server/app.py, minimal web/index.html client
+#   /workflow status        (état + un agent par ligne)
+#   /workflow stop          (annulation)
+```
+
+L'assistant appelle `start_workflow` (mêmes vagues, même boucle qualité que
+`vibe workflow run`), répond avec l'URL du board (http://127.0.0.1:8787) et
+la session reste utilisable pendant que l'équipe tourne en arrière-plan.
+Les trois outils sont invisibles dans les workers (pas d'équipes récursives).
+
+## 1b. Démo standard — sous-commande (~2-4 min, ~2-4 $)
 
 ```sh
 uv run vibe workflow run \
