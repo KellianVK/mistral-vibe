@@ -213,6 +213,12 @@ visualizer/node_modules/
 visualizer/dist/
 demo-project/logs/
 demo-project/.vibe/workflow-state.json
+# Agent-generated demo output — never commit the team's work products
+demo-project/server/
+demo-project/web/
+demo-project/tests/
+demo-project/test_*.py
+demo-project/__pycache__/
 
 # Tests run the agent in the playground, we don't need to keep the session files
 tests/playground/*

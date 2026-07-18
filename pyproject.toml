@@ -257,6 +257,7 @@ max-nested-blocks = 5
 ignore_decorators = ["@*"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 addopts = "-vvvv -q -n auto --durations=10 --import-mode=importlib --maxschedchunk=1"
 timeout = 10
 filterwarnings = [
