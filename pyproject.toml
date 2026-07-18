@@ -139,11 +139,21 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-include = ["vibe/"]
+include = [
+    "vibe/",
+    "workflow_memory/",
+    "prompts/",
+    "orchestrator.py",
+    "dashboard.py",
+    "setup_workflow.py",
+]
+exclude = ["tests/"]
 
 [project.scripts]
 vibe = "vibe.cli.entrypoint:main"
 vibe-acp = "vibe.acp.entrypoint:main"
+vibe-workflow = "orchestrator:main"
+vibe-workflow-setup = "setup_workflow:main"
 
 [tool.uv]
 exclude-newer = "2 days"
@@ -192,13 +202,27 @@ pythonVersion = "3.12"
 reportMissingTypeStubs = false
 reportPrivateImportUsage = false
 
-include = ["vibe/**/*.py", "tests/**/*.py"]
+include = [
+    "vibe/**/*.py",
+    "workflow_memory/**/*.py",
+    "orchestrator.py",
+    "dashboard.py",
+    "setup_workflow.py",
+    "tests/**/*.py",
+]
 exclude = ["pyinstaller/"]
 venvPath = "."
 venv = ".venv"
 
 [tool.ruff]
-include = ["vibe/**/*.py", "tests/**/*.py"]
+include = [
+    "vibe/**/*.py",
+    "workflow_memory/**/*.py",
+    "orchestrator.py",
+    "dashboard.py",
+    "setup_workflow.py",
+    "tests/**/*.py",
+]
 exclude = ["pyinstaller/"]
 line-length = 88
 target-version = "py312"
@@ -234,7 +258,7 @@ ignore = ["D203", "D205", "D213", "ANN401", "PLR6301"]
 ban-relative-imports = "all"
 
 [tool.ruff.lint.isort]
-known-first-party = ["vibe"]
+known-first-party = ["vibe", "workflow_memory"]
 force-sort-within-sections = true
 split-on-trailing-comma = false
 combine-as-imports = true
