@@ -16,7 +16,17 @@ def create_app(project_dir: Path) -> FastAPI:
     app = FastAPI()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        # 5173 = `vite`/`npm run dev`, 4173 = `vite preview` (production build).
+        # WebSocket connections aren't subject to CORS, so this only gates the
+        # plain GET /state and /manifest fetches (initial load + polling
+        # fallback) — a mismatch here silently breaks those while /ws still
+        # works, which is exactly the kind of bug that hides itself.
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:4173",
+            "http://127.0.0.1:4173",
+        ],
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -1,49 +1,12 @@
+/* App shell — top bar / main+rail / bottom claim strip */
+
 .app {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-.app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 20px;
-  border-bottom: 1px solid #2a2d34;
-  background: #14161b;
-  flex-shrink: 0;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.goal {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: #9ca3af;
-}
-
-.conn-badge {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-}
-
-.conn-badge--live {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-}
-
-.conn-badge--poll {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
 }
 
 .app-body {
@@ -52,10 +15,23 @@
   min-height: 0;
 }
 
-.graph-pane {
+.app-body__main {
   flex: 1;
   min-width: 0;
   position: relative;
+  background: var(--bg);
+}
+
+.app-body__rail {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--surface-border);
+  background: var(--surface);
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .empty-state {
@@ -64,39 +40,155 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-muted);
   padding: 40px;
   max-width: 420px;
   margin: 0 auto;
 }
 
 .empty-state code {
-  background: #1c1f26;
+  font-family: var(--mono);
+  background: var(--surface-raised);
   padding: 2px 6px;
-  border-radius: 4px;
-  color: #e5e7eb;
+  border-radius: var(--radius-sm);
+  color: var(--text-bright);
 }
 
-.side-panel {
-  width: 320px;
+/* WorkflowHeader */
+
+.workflow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--surface);
   flex-shrink: 0;
-  border-left: 1px solid #2a2d34;
-  background: #14161b;
-  overflow-y: auto;
-  padding: 16px;
 }
 
-.side-panel section + section {
-  margin-top: 24px;
+.workflow-header__identity {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
-.side-panel h2 {
+.workflow-header__brand {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.workflow-header__goal {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-header__signals {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.workflow-header__count {
+  font-family: var(--mono);
   font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.pill--run-idle {
+  color: var(--text-muted);
+  border-color: var(--surface-border);
+}
+.pill--run-running {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.pill--run-blocked {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.pill--run-done {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.pill--conn-live {
+  color: var(--success);
+}
+.pill--conn-reconnecting {
+  color: var(--warning);
+}
+.pill--conn-reconnecting .pill__dot {
+  animation: dot-blink 1.2s ease-in-out infinite;
+}
+.pill--conn-offline {
+  color: var(--error);
+}
+
+@keyframes dot-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Side rail panels: DecisionFeed, OpenQuestions */
+
+.panel-section__title {
+  font-family: var(--mono);
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #9ca3af;
-  margin: 0 0 10px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
   font-weight: 600;
+}
+
+.panel-section__empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-style: italic;
+  margin: 0;
 }
 
 .feed {
@@ -105,89 +197,258 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+.feed__item {
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 8px 9px;
+  background: var(--surface-raised);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius);
+}
+
+.feed__item--question {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--surface-border));
+}
+
+.feed__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
+  margin-bottom: 3px;
 }
 
-.feed li {
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 8px 10px;
-  background: #1c1f26;
-  border-radius: 8px;
-}
-
-.feed__empty {
-  color: #6b7280;
-  font-style: italic;
-}
-
-.role-tag {
-  display: block;
+.feed__role {
+  font-family: var(--mono);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: #93c5fd;
-  margin-bottom: 3px;
+  color: var(--info);
   font-weight: 600;
 }
 
-/* ReactFlow role nodes */
-.role-node {
-  border-radius: 10px;
-  border: 2px solid #9ca3af;
-  background: #1c1f26;
-  color: #f5f5f5;
-  padding: 10px 14px;
-  min-width: 170px;
+.feed__time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  flex-shrink: 0;
 }
 
-.role-node--working {
-  animation: role-pulse 1.6s ease-in-out infinite;
+.feed__text {
+  margin: 0;
+  color: var(--text);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
 }
 
-.role-node__title {
+/* ClaimPanel — bottom strip */
+
+.claim-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--surface-border);
+  background: var(--surface);
+  padding: 8px 16px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.claim-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.claim-panel__head .panel-section__title {
+  margin: 0;
+}
+
+.claim-panel__conflict-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--error);
+  border: 1px solid color-mix(in srgb, var(--error) 50%, transparent);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.panel-section__empty--inline {
+  margin: 0;
+}
+
+.claim-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.claim-list__item {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--surface-border);
+  color: var(--text-muted);
 }
 
-.role-node__title strong {
-  text-transform: capitalize;
-  font-size: 13px;
+.claim-list__item--conflict {
+  border-color: color-mix(in srgb, var(--error) 55%, transparent);
+  color: var(--error);
 }
 
-.role-node__dot {
-  width: 9px;
-  height: 9px;
+.claim-list__path {
+  color: var(--text);
+}
+.claim-list__item--conflict .claim-list__path {
+  color: var(--error);
+}
+
+.claim-list__roles {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* AgentNode (ReactFlow custom node) */
+
+.agent-node {
+  width: 200px;
+  min-height: 84px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--text-faint);
+  background: var(--surface-raised);
+  color: var(--text);
+  padding: 9px 12px;
+  box-sizing: border-box;
+}
+
+.agent-node__handle {
+  opacity: 0;
+}
+
+.agent-node__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.agent-node__dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.role-node__status {
-  font-size: 10px;
-  margin-top: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.agent-node__role {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--text-bright);
 }
 
-.role-node__task {
-  font-size: 12px;
+.agent-node__decision-marker {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--info);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.agent-node__status {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.agent-node__task {
+  font-size: 11.5px;
+  line-height: 1.4;
   margin-top: 6px;
-  opacity: 0.85;
-  max-width: 220px;
+  color: var(--text-muted);
   overflow: hidden;
-  text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
-@keyframes role-pulse {
+.agent-node__blocked {
+  margin-top: 6px;
+}
+
+.agent-node__blocked-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warning);
+  margin-bottom: 2px;
+}
+
+.agent-node--working {
+  animation: agent-pulse var(--motion, 1.6s) ease-in-out infinite;
+  animation-duration: 1.6s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-node--working {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
+@keyframes agent-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 7px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+/* Responsive: stack the rail below the map, keep the claim strip last */
+
+@media (max-width: 860px) {
+  .app-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .app-body__main {
+    height: 55vh;
+    min-height: 320px;
+    flex-shrink: 0;
+  }
+
+  .app-body__rail {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--surface-border);
+  }
+
+  .workflow-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .workflow-header__goal {
+    white-space: normal;
   }
 }

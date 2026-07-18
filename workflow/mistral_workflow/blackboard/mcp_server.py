@@ -44,6 +44,21 @@ def update_status(role: str, state: str, current_task: str | None = None) -> str
     return f"Status for '{role}' updated to '{state}'."
 
 
+@app.tool()
+def claim_file(role: str, path: str) -> str:
+    """Announce that you (role) are about to edit a file, so teammates can see it on the
+    Blackboard and avoid a conflicting concurrent edit. Release it with release_file when done."""
+    _get_blackboard().claim_file(role, path)
+    return f"'{role}' claimed '{path}'."
+
+
+@app.tool()
+def release_file(role: str, path: str) -> str:
+    """Release a file previously claimed with claim_file."""
+    _get_blackboard().release_file(role, path)
+    return f"'{role}' released '{path}'."
+
+
 def main() -> None:
     app.run(transport="stdio")
 

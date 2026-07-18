@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-_EMPTY_STATE: dict[str, Any] = {"agents": {}, "decisions": [], "questions": []}
+_EMPTY_STATE: dict[str, Any] = {"agents": {}, "decisions": [], "questions": [], "claims": []}
 
 
 def _now() -> str:
@@ -31,7 +31,10 @@ class Blackboard:
         if not self.path.exists():
             return dict(_EMPTY_STATE)
         with self.path.open() as f:
-            return json.load(f)
+            data: dict[str, Any] = json.load(f)
+        # Backward-compat: state files written before "claims" existed.
+        data.setdefault("claims", [])
+        return data
 
     def _write(self, data: dict[str, Any]) -> None:
         tmp = self.path.with_suffix(".tmp")
@@ -81,6 +84,24 @@ class Blackboard:
         with self._lock:
             data = self._read()
             data["questions"][index]["resolved"] = True
+            self._write(data)
+
+    def claim_file(self, role: str, path: str) -> None:
+        """Announce that `role` is about to edit `path`. Additive, best-effort
+        signal for the dashboard — nothing in the orchestrator enforces
+        exclusivity; a second claim on the same path is a conflict to
+        surface, not an error to reject.
+        """
+        with self._lock:
+            data = self._read()
+            data["claims"] = [c for c in data["claims"] if not (c["role"] == role and c["path"] == path)]
+            data["claims"].append({"role": role, "path": path, "ts": _now()})
+            self._write(data)
+
+    def release_file(self, role: str, path: str) -> None:
+        with self._lock:
+            data = self._read()
+            data["claims"] = [c for c in data["claims"] if not (c["role"] == role and c["path"] == path)]
             self._write(data)
 
     def state(self) -> dict[str, Any]:

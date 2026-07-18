@@ -61,6 +61,19 @@ Other commands: `mistral workflow status`, `mistral workflow agents`, `mistral w
 --agent <role>`, `mistral workflow memory` (raw Blackboard JSON) / `--replay` (readable
 narrative), `mistral workflow loop` (manually retry a currently-blocked QA gate).
 
+### Using it from inside `vibe` itself
+
+`mistral workflow init` also writes `.vibe/skills/workflow/SKILL.md`, so once a project is
+initialized you don't have to leave an interactive `vibe` session to drive the team — type
+`/workflow` and it runs `mistral workflow status`/`run`/etc. via `bash` on your behalf and
+reports back in its own words. Verified live: `/workflow` correctly ran `status` and summarized
+it, and correctly called `mistral workflow update_status` over the `blackboard_*` MCP tools when
+asked to. The one thing to know: `mistral workflow run` can take several minutes, and this
+environment's `bash` tool caps at a 600s timeout with `nohup`/backgrounding blocked — the skill
+tells the model to raise the call's timeout to the max and, if a bigger team still doesn't
+finish in time, to say so and suggest running it in a separate terminal instead. That fallback
+path is documented, not exhaustively re-verified end-to-end under this session's time budget.
+
 ### Bonus roles
 
 `mistral workflow init --extra-roles security,devops,frontend,docs` adds any subset of four
@@ -91,8 +104,31 @@ the one built for reliability under demo conditions.
 - **The Blackboard is a JSON file**, not a database or an MCP server. `mistral workflow run`
   (one process) is the only writer; `blackboard/api.py` (a separate FastAPI process) only
   reads it. Atomic writes (temp file + `os.replace`) mean the API never sees a partial write.
+- **The visualizer's visual language is derived from the real Vibe CLI**, not invented: colors
+  extracted from `vibe/cli/textual_ui/app.tcss` and rendered Vibe snapshots under
+  `tests/snapshots/`, not just the brief's description of them. Components: `WorkflowHeader`
+  (goal, run status, connection, completion count), `TeamCanvas` (the graph, one `AgentNode` per
+  role — stable dimensions, clamped task text so long labels never reflow the graph),
+  `DecisionFeed` / `OpenQuestions` (right rail), `ClaimPanel` (bottom strip). `buildGraph()` in
+  `lib/buildGraph.ts` is a pure `(manifest, state) -> {nodes, edges}` function with fixed,
+  hardcoded positions per canonical role — no auto-layout dependency, no reflow as roles
+  complete. Open questions render as animated, labeled graph edges (`waiting on X`) distinct
+  from the static dependency edges; when a question and a dependency connect the same two roles,
+  the dependency's label is suppressed rather than overlapping the more specific question label
+  (found and fixed by actually looking at the rendered graph, not just reading the code).
 - **The visualizer prefers a WebSocket**, falling back to polling `GET /state` every 1.5s if
-  the socket won't connect, and keeps retrying the socket in the background.
+  the socket won't connect. Connection state is a real three-value model (`live` /
+  `reconnecting` / `offline`, promoted to `offline` after 3 consecutive failed polls), and the
+  last known snapshot is always retained — verified by killing the API server against a
+  production build (`vite preview`, no dev-server HMR to confound the test) and confirming the
+  goal/graph/decisions stayed on screen with the header correctly reading "Offline", then
+  recovering to "Live" on restart with no page reload needed.
+- **File claims are a real, additive Blackboard concept** (`claim_file`/`release_file` on
+  `Blackboard`, exposed as `blackboard_*` MCP tools), not just a UI mock — but nothing in the
+  sequential orchestrator calls them automatically, so `ClaimPanel` will show "No active claims"
+  in an ordinary `mistral workflow run`. It's there for agents that choose to call
+  `blackboard_claim_file`, and was verified by seeding representative conflict data directly,
+  the same "additive, best-effort" posture as `blackboard_request_review`.
 - **The Loop Engine** (`loop_engine.py`) only loops the QA↔Backend edge: if QA doesn't report
   `RESULT: PASS`, it republishes the full test failure to the Blackboard, re-runs Backend
   (which now sees that failure as context), then re-runs QA — up to `max_loop_iterations`
@@ -137,3 +173,14 @@ the one built for reliability under demo conditions.
   `cli.py`'s `graph` command). Moving `workflow/` out of this repo breaks that lookup.
 - The Blackboard has no cross-process lock beyond atomic writes — fine for one `run` at a
   time (the intended usage), not for two concurrent `run`s against the same project.
+- `blackboard/api.py`'s CORS allowlist is hardcoded to `localhost`/`127.0.0.1` on ports 5173
+  (`vite`/`npm run dev`) and 4173 (`vite preview`). Found the hard way: WebSocket connections
+  aren't subject to CORS, so serving the dashboard from any other origin silently breaks the
+  plain `GET /manifest` and `/state` fetches (initial load, and the polling fallback) while the
+  WS still connects and looks fine — a real dashboard deployed elsewhere needs this list
+  extended or relaxed.
+- `/workflow`'s guidance for backgrounding a long `mistral workflow run` from inside an
+  interactive Vibe session (raise the bash timeout to the max, fall back to a separate terminal
+  for bigger teams) is the best available approach given this environment blocks `nohup` and
+  caps bash at 600s — but it's model-followed instruction, not code, and wasn't exhaustively
+  re-verified for every team size / retry-count combination.

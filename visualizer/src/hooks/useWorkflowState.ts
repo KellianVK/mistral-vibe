@@ -1,63 +1,29 @@
 import { useEffect, useRef, useState } from "react";
-
-export type AgentStatus = "idle" | "working" | "done" | "blocked" | "error";
-
-export interface AgentState {
-  status: AgentStatus;
-  current_task: string | null;
-  updated_at: string;
-}
-
-export interface Decision {
-  role: string;
-  summary: string;
-  artifact: string | null;
-  ts: string;
-}
-
-export interface Question {
-  from: string;
-  to: string;
-  question: string;
-  resolved: boolean;
-}
-
-export interface BlackboardState {
-  agents: Record<string, AgentState>;
-  decisions: Decision[];
-  questions: Question[];
-}
-
-export interface RoleSpec {
-  name: string;
-  agent_profile: string;
-  model: string | null;
-  depends_on: string[];
-}
-
-export interface Manifest {
-  project: { goal: string; gates: string[]; max_loop_iterations: number } | null;
-  roles: RoleSpec[];
-}
+import type { BlackboardState, ConnectionState, Manifest } from "../types";
 
 const API_BASE = "http://localhost:8787";
 const WS_URL = "ws://localhost:8787/ws";
 const POLL_INTERVAL_MS = 1500;
 const RECONNECT_DELAY_MS = 3000;
+const OFFLINE_AFTER_FAILED_POLLS = 3;
 
-const EMPTY_STATE: BlackboardState = { agents: {}, decisions: [], questions: [] };
+const EMPTY_STATE: BlackboardState = { agents: {}, decisions: [], questions: [], claims: [] };
 const EMPTY_MANIFEST: Manifest = { project: null, roles: [] };
 
 /**
- * Prefers a live WebSocket (server pushes on every Blackboard change);
- * falls back to polling GET /state if the socket never connects, and
- * keeps retrying the socket in the background so it can take back over.
+ * Prefers a live WebSocket (server pushes on every Blackboard change).
+ * If the socket can't connect, falls back to polling GET /state and reports
+ * "reconnecting" while polling succeeds. If polling itself starts failing
+ * too (server unreachable), reports "offline" — but keeps showing the last
+ * known snapshot either way; state is only ever replaced by a fresh
+ * snapshot, never optimistically mutated or cleared.
  */
 export function useWorkflowState() {
   const [manifest, setManifest] = useState<Manifest>(EMPTY_MANIFEST);
   const [state, setState] = useState<BlackboardState>(EMPTY_STATE);
-  const [connected, setConnected] = useState(false);
+  const [connection, setConnection] = useState<ConnectionState>("reconnecting");
   const pollHandle = useRef<number | null>(null);
+  const failedPolls = useRef(0);
 
   useEffect(() => {
     const refreshManifest = () =>
@@ -80,8 +46,17 @@ export function useWorkflowState() {
       pollHandle.current = window.setInterval(() => {
         fetch(`${API_BASE}/state`)
           .then((r) => r.json())
-          .then((s) => !cancelled && setState(s))
-          .catch(() => {});
+          .then((s) => {
+            if (cancelled) return;
+            setState(s);
+            failedPolls.current = 0;
+            setConnection((c) => (c === "live" ? c : "reconnecting"));
+          })
+          .catch(() => {
+            if (cancelled) return;
+            failedPolls.current += 1;
+            if (failedPolls.current >= OFFLINE_AFTER_FAILED_POLLS) setConnection("offline");
+          });
       }, POLL_INTERVAL_MS);
     };
 
@@ -97,14 +72,15 @@ export function useWorkflowState() {
       ws = new WebSocket(WS_URL);
       ws.onopen = () => {
         if (cancelled) return;
-        setConnected(true);
+        setConnection("live");
+        failedPolls.current = 0;
         stopPolling();
       };
       ws.onmessage = (ev) => {
         try {
           setState(JSON.parse(ev.data));
         } catch {
-          // ignore malformed frame
+          // ignore malformed frame — keep the last good snapshot
         }
       };
       ws.onerror = () => {
@@ -112,7 +88,7 @@ export function useWorkflowState() {
       };
       ws.onclose = () => {
         if (cancelled) return;
-        setConnected(false);
+        setConnection((c) => (c === "live" ? "reconnecting" : c));
         startPolling();
         retryTimer = window.setTimeout(connect, RECONNECT_DELAY_MS);
       };
@@ -128,5 +104,5 @@ export function useWorkflowState() {
     };
   }, []);
 
-  return { manifest, state, connected };
+  return { manifest, state, connection };
 }
