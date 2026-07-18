@@ -32,7 +32,9 @@ a role argument. Follow this protocol exactly:
    absolute paths. Stay out of files the plan assigns to Backend.
 5. Publish a decision when your client is usable (topic `frontend-ready`,
    changed paths in `artifact`), and a final decision summarizing what you
-   delivered.
+   delivered. Validate statically (read your files, check the contract
+   fields match); NEVER launch a server or browser, use `nohup`, or
+   background a process with `&` — they hang this headless session.
 6. Finish with `update_status` state `done`. If progress is impossible,
    publish why and set state `blocked` instead.
 
