@@ -75,7 +75,7 @@ def test_build_worker_command_uses_role_limits_and_restricted_tools(
         "--output",
         "streaming",
         "--max-price",
-        "1.00",
+        "5.00",
         "--max-turns",
         "50",
         "--agent",
@@ -126,11 +126,13 @@ def test_build_worker_environment_adds_runtime_mcp_without_project_files(
         {
             "VIBE_ACTIVE_MODEL": "devstral-small",
             "VIBE_MCP_SERVERS": json.dumps([existing_server]),
+            "VIRTUAL_ENV": str(tmp_path / ".venv"),
         },
         database_path,
     )
 
     assert environment["VIBE_ACTIVE_MODEL"] == "mistral-medium-3.5"
+    assert "VIRTUAL_ENV" not in environment
     assert json.loads(environment["VIBE_MCP_SERVERS"]) == [
         existing_server,
         {
@@ -461,13 +463,12 @@ async def test_run_workflow_blocks_implementation_after_planner_failure(
 
 
 @pytest.mark.asyncio
-async def test_run_workflow_starts_backend_and_qa_after_successful_plan(
+async def test_run_workflow_runs_planner_backend_and_qa_in_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workdir = tmp_path / "project"
     workdir.mkdir()
     lifecycle: list[str] = []
-    release_workers = asyncio.Event()
 
     async def fake_run_worker(
         role: str,
@@ -480,10 +481,6 @@ async def test_run_workflow_starts_backend_and_qa_after_successful_plan(
     ) -> orchestrator.WorkerResult:
         assert environment == {"WORKFLOW_TEST": "present"}
         lifecycle.append(f"start:{role}")
-        if role != "Planner":
-            if {"start:Backend", "start:QA"}.issubset(lifecycle):
-                release_workers.set()
-            await release_workers.wait()
         lifecycle.append(f"finish:{role}")
         if role == "Planner":
             return orchestrator.WorkerResult(role=role, return_code=1, completed=True)
@@ -508,6 +505,62 @@ async def test_run_workflow_starts_backend_and_qa_after_successful_plan(
         "Build a Todo API", workdir, environment={"WORKFLOW_TEST": "present"}
     )
 
-    assert lifecycle[0:2] == ["start:Planner", "finish:Planner"]
-    assert set(lifecycle[2:4]) == {"start:Backend", "start:QA"}
+    assert lifecycle == [
+        "start:Planner",
+        "finish:Planner",
+        "start:Backend",
+        "finish:Backend",
+        "start:QA",
+        "finish:QA",
+    ]
     assert all(result.succeeded for result in results)
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_does_not_start_qa_after_backend_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    started_roles: list[str] = []
+
+    async def fake_run_worker(
+        role: str,
+        _goal: str,
+        _workdir: Path,
+        _database_path: Path,
+        _deadline: float,
+        *,
+        environment: dict[str, str] | None = None,
+    ) -> orchestrator.WorkerResult:
+        assert environment == {"WORKFLOW_TEST": "present"}
+        started_roles.append(role)
+        if role == "Backend":
+            return orchestrator.WorkerResult(
+                role=role, return_code=1, error="backend failed"
+            )
+        return orchestrator.WorkerResult(role=role, return_code=0)
+
+    monkeypatch.setattr(orchestrator, "reset_workflow_state", lambda _path: None)
+    monkeypatch.setattr(orchestrator, "run_worker", fake_run_worker)
+
+    async def fake_verify(
+        result: orchestrator.WorkerResult, _database_path: Path, _since_id: int | None
+    ) -> orchestrator.WorkerResult:
+        return result
+
+    monkeypatch.setattr(orchestrator, "_verify_published_decision", fake_verify)
+
+    async def fake_latest_decision_id(_database_path: Path) -> None:
+        return None
+
+    monkeypatch.setattr(orchestrator, "_latest_decision_id", fake_latest_decision_id)
+
+    results = await orchestrator.run_workflow(
+        "Build a Todo API", workdir, environment={"WORKFLOW_TEST": "present"}
+    )
+
+    assert started_roles == ["Planner", "Backend"]
+    assert results[2] == orchestrator.WorkerResult(
+        role="QA", return_code=-1, error="Backend did not complete; QA was not started"
+    )

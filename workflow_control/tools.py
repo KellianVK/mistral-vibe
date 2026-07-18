@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 import os
 from pathlib import Path
@@ -20,6 +21,7 @@ from workflow_control._controller import (
     WorkflowController,
     WorkflowStatus,
 )
+from workflow_control._dashboard import open_workflow_dashboard
 
 
 class WorkflowControlConfig(BaseToolConfig):
@@ -59,6 +61,15 @@ class WorkflowControlResult(BaseModel):
     goal: str | None = None
     error: str | None = None
     agents: list[WorkflowAgentResult] = Field(default_factory=list)
+
+
+class WorkflowDashboardResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+    message: str
+    url: str
+    browser_opened: bool
 
 
 _controllers: dict[Path, WorkflowController] = {}
@@ -133,6 +144,35 @@ class GetWorkflowStatus(
         self, args: EmptyWorkflowArgs, ctx: InvokeContext | None = None
     ) -> AsyncGenerator[WorkflowControlResult, None]:
         yield _status_result(await _controller().status())
+
+
+class OpenWorkflowDashboard(
+    BaseTool[
+        EmptyWorkflowArgs,
+        WorkflowDashboardResult,
+        WorkflowControlConfig,
+        WorkflowControlState,
+    ]
+):
+    description = "Open the live workflow graph in the default web browser."
+
+    @classmethod
+    def is_available(cls, config: object | None = None) -> bool:
+        return os.environ.get(WORKER_ENV) != "1"
+
+    async def run(
+        self, args: EmptyWorkflowArgs, ctx: InvokeContext | None = None
+    ) -> AsyncGenerator[WorkflowDashboardResult, None]:
+        controller = _controller()
+        launch = await asyncio.to_thread(
+            open_workflow_dashboard, controller.workdir, controller.dashboard_status
+        )
+        message = (
+            "Workflow dashboard opened in the default browser"
+            if launch["browser_opened"]
+            else "Workflow dashboard started; open the URL manually"
+        )
+        yield WorkflowDashboardResult(ok=True, message=message, **launch)
 
 
 class StopWorkflow(

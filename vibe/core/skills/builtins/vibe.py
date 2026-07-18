@@ -720,9 +720,12 @@ Each skill is a directory containing a `SKILL.md` file with YAML frontmatter.
 
 The built-in user-invocable `workflow` Skill is available in every project:
 - `/workflow <software-delivery-goal>` starts Planner, Backend, and QA in the
-  background through a shared SQLite/MCP blackboard.
+  background through a shared SQLite/MCP blackboard. They run sequentially so
+  downstream agents do not spend model calls polling their dependencies.
 - `/workflow status` reports the current run, per-agent status, and Vibe stop
   reasons such as turn or price limits.
+- `/workflow dashboard` opens a tokenized, read-only React Flow view served on
+  `127.0.0.1`; it refreshes every second without changing terminal status.
 - `/workflow stop` cancels the current run.
 
 It injects the workflow MCP server into child-process runtime configuration and

@@ -22,8 +22,8 @@ from workflow_memory.store import (
     workflow_database_path,
 )
 
-MAX_WORKFLOW_SECONDS = 10 * 60
-MAX_PRICE = "1.00"
+MAX_WORKFLOW_SECONDS = 30 * 60
+MAX_PRICE = "5.00"
 MAX_TURNS_BY_ROLE = {"Planner": "50", "Backend": "50", "QA": "50"}
 WORKFLOW_MODEL = "mistral-medium-3.5"
 STREAM_LIMIT_BYTES = 10 * 1024 * 1024
@@ -111,6 +111,7 @@ def build_worker_environment(
     environment: Mapping[str, str], database_path: Path
 ) -> dict[str, str]:
     child_environment = dict(environment)
+    child_environment.pop("VIRTUAL_ENV", None)
     servers: list[dict[str, object]] = []
     if serialized_servers := child_environment.get(MCP_SERVERS_ENV):
         try:
@@ -414,32 +415,31 @@ async def run_workflow(
         )
         return [planner, backend, qa]
 
-    parallel_since_id = await _latest_decision_id(database_path)
-    backend_task = asyncio.create_task(
-        run_worker(
-            "Backend",
-            goal,
-            resolved_workdir,
-            database_path,
-            deadline,
-            environment=child_environment,
-        )
+    backend_since_id = await _latest_decision_id(database_path)
+    backend = await run_worker(
+        "Backend",
+        goal,
+        resolved_workdir,
+        database_path,
+        deadline,
+        environment=child_environment,
     )
-    qa_task = asyncio.create_task(
-        run_worker(
-            "QA",
-            goal,
-            resolved_workdir,
-            database_path,
-            deadline,
-            environment=child_environment,
-        )
+    backend = await _verify_published_decision(backend, database_path, backend_since_id)
+    if not backend.succeeded:
+        reason = "Backend did not complete; QA was not started"
+        qa = await _blocked_worker(database_path, "QA", reason)
+        return [planner, backend, qa]
+
+    qa_since_id = await _latest_decision_id(database_path)
+    qa = await run_worker(
+        "QA",
+        goal,
+        resolved_workdir,
+        database_path,
+        deadline,
+        environment=child_environment,
     )
-    backend, qa = await asyncio.gather(backend_task, qa_task)
-    backend = await _verify_published_decision(
-        backend, database_path, parallel_since_id
-    )
-    qa = await _verify_published_decision(qa, database_path, parallel_since_id)
+    qa = await _verify_published_decision(qa, database_path, qa_since_id)
     return [planner, backend, qa]
 
 

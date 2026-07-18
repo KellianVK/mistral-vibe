@@ -109,7 +109,7 @@ pip install mistral-vibe
 - **Safety First**: Features tool execution approval.
 - **Multiple Built-in Agents**: Choose from different agent profiles tailored for specific workflows.
 - **Multi-agent Workflows**: Use `/workflow <goal>` to coordinate Planner,
-  Backend, and QA agents through a shared SQLite/MCP blackboard. See
+  Backend, and QA agents sequentially through a shared SQLite/MCP blackboard. See
   [Vibe Workflow](VIBE_WORKFLOW.md).
 
 ### Built-in Agents
@@ -335,10 +335,13 @@ The built-in workflow Skill starts and controls background multi-agent runs:
 ```text
 /workflow <software-delivery-goal>
 /workflow status
+/workflow dashboard
 /workflow stop
 ```
 
-It is available in every project without creating a `.vibe` directory.
+The dashboard command opens an explicit, read-only React Flow visualization in
+the default browser. These commands are available in every project without
+creating a `.vibe` directory.
 
 ### Custom Slash Commands via Skills
 

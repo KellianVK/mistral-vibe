@@ -84,12 +84,11 @@ class WorkflowController:
             read_status_snapshot, workflow_database_path(self.workdir)
         )
         async with self._lock:
-            state = self._state
-            if state == "idle":
-                state = _infer_state(agents)
-            return WorkflowStatus(
-                state=state, goal=self._goal, error=self._error, agents=agents
-            )
+            return self._status_from_agents(agents)
+
+    def dashboard_status(self) -> WorkflowStatus:
+        agents = read_status_snapshot(workflow_database_path(self.workdir))
+        return self._status_from_agents(agents)
 
     async def stop(self) -> WorkflowAction:
         async with self._lock:
@@ -129,6 +128,14 @@ class WorkflowController:
     def _action(self, ok: bool, message: str) -> WorkflowAction:
         return WorkflowAction(
             ok=ok, state=self._state, message=message, goal=self._goal
+        )
+
+    def _status_from_agents(self, agents: list[StatusSnapshot]) -> WorkflowStatus:
+        state = self._state
+        if state == "idle":
+            state = _infer_state(agents)
+        return WorkflowStatus(
+            state=state, goal=self._goal, error=self._error, agents=agents
         )
 
 

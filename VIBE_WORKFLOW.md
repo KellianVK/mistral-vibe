@@ -25,7 +25,8 @@ configuration, environment, and OS keyring as the parent session. Any
 authentication method already supported by Vibe therefore works without
 workflow-specific setup. Their active model is pinned at runtime to
 `mistral-medium-3.5`; this does not modify the parent session or persisted user
-configuration.
+configuration. The inherited `VIRTUAL_ENV` is removed before workers start so
+dependency commands in a generated project cannot mutate Vibe's environment.
 
 ## Run from the interactive Vibe CLI
 
@@ -49,8 +50,14 @@ session remains available. Inspect or cancel that run from the same CLI:
 
 ```text
 /workflow status
+/workflow dashboard
 /workflow stop
 ```
+
+`/workflow dashboard` starts a read-only server bound to `127.0.0.1` on an
+available port and opens its tokenized URL in the default browser. The packaged
+React Flow view refreshes every second and requires no Node.js installation at
+runtime. `/workflow status` remains terminal-only and never opens a window.
 
 Keep the Vibe session open until the workflow finishes. The in-process control
 tools allow only one background run per Vibe session and are hidden from
@@ -64,13 +71,13 @@ The standalone entry point remains available for scripts and CI:
 uv run vibe-workflow run --goal "API Todo en Flask avec 2 endpoints + tests" --workdir "<absolute-path-to-target-project>"
 ```
 
-The Planner runs first. Backend and QA then run concurrently in the same
-workdir; QA polls the blackboard until Backend publishes a decision before it
-tests the implementation. The whole workflow has a ten-minute deadline and each
-worker is capped at 50 turns and USD 1.00, so the maximum theoretical price for
-all three workers is USD 3.00. Planner only receives read and coordination
-tools; if it fails before publishing a completed plan, Backend and QA are
-blocked without launching.
+Planner, Backend, and QA run sequentially in the same workdir. Each downstream
+role starts only after its dependency publishes a decision, so QA never spends
+model calls polling while Backend works. The workflow has a thirty-minute
+deadline and each worker is capped at 50 turns and USD 5.00, so the maximum
+theoretical price for all three workers is USD 15.00. Planner only receives read
+and coordination tools. If Planner or Backend fails before publishing its
+deliverable, dependent roles are blocked without launching.
 
 The current Vibe programmatic mode follows `default_agent`; it is not
 unconditionally auto-approved. For headless compatibility, the orchestrator
@@ -110,11 +117,12 @@ interactive Vibe -> /workflow Skill -> built-in control tools
                                          |
                                          v
                                     orchestrator.py
-                                      |-- Planner Vibe process ---------\
-                                      |-- Backend Vibe process ----------+--> workflow MCP --> workflow.db
-                                      `-- QA Vibe process --------------/                       ^
-                                                                                                 |
-dashboard.py (read-only) ------------------------------------------------------------------------'
+                                          |
+                                          v
+                           Planner -> Backend -> QA ----> workflow MCP --> workflow.db
+                                                                               ^
+                                                                               |
+dashboard.py (read-only) ------------------------------------------------------'
 ```
 
 ### Shared memory
@@ -147,8 +155,7 @@ The memory server still exposes exactly three tools. Vibe prefixes them with the
 configured server name:
 
 - `workflow_read_decisions(filter_role, since_id)` returns decision records and
-  must be called before an agent starts work. QA also uses it for incremental
-  Backend polling.
+  must be called before an agent starts work.
 - `workflow_publish_decision(role, summary, artifact)` records a meaningful
   step and returns its SQLite ID as a string.
 - `workflow_update_status(role, state, current_task)` records lifecycle and
@@ -158,17 +165,19 @@ The tool docstrings and role prompts deliberately repeat the protocol: read
 first, publish every significant deliverable or interface contract, and update
 status at the beginning and end of work.
 
-The built-in workflow integration exposes three user-facing control tools:
+The built-in workflow integration exposes four user-facing control tools:
 
 - `start_workflow(goal)` starts orchestration in a background
   task and returns immediately.
 - `get_workflow_status()` returns controller state and the
   latest SQLite snapshot for every role.
+- `open_workflow_dashboard()` starts or reuses the local read-only dashboard
+  and opens its tokenized URL in the default browser.
 - `stop_workflow()` cancels the run owned by the current Vibe
   session and terminates its active worker processes.
 
-The `/workflow` Skill maps `run`, `status`, and `stop` requests to those tools.
-It never shells out to a nested interactive Vibe process.
+The `/workflow` Skill maps `run`, `status`, `dashboard`, and `stop` requests to
+those tools. It never shells out to a nested interactive Vibe process.
 
 ### Role prompts and sequencing
 
@@ -178,13 +187,13 @@ prompt, launches Vibe with an argument list rather than a shell command, and
 parses newline-delimited JSON defensively. Non-JSON stdout lines are ignored.
 
 If a Vibe process cannot start, exits nonzero, is cancelled, or reaches the
-global deadline, the orchestrator marks that role `blocked` in SQLite. Other
-workers continue when time remains. A zero exit code without a new decision
-from that role is also treated as `blocked`, which catches missing or ignored
-MCP configuration. A successful process with a published decision is finalized
-as `done`. A worker that publishes its required decision and reports `done`
-also remains successful if Vibe reaches its turn limit while producing the
-final headless response.
+global deadline, the orchestrator marks that role `blocked` in SQLite and does
+not launch roles that depend on its output. A zero exit code without a new
+decision from that role is also treated as `blocked`, which catches missing or
+ignored MCP configuration. A successful process with a published decision is
+finalized as `done`. A worker that publishes its required decision and reports
+`done` also remains successful if Vibe reaches its turn limit while producing
+the final headless response.
 
 ### Logs
 

@@ -12,6 +12,7 @@ from vibe.core.tools.manager import ToolManager
 from workflow_control._controller import WorkflowController
 from workflow_control.tools import (
     GetWorkflowStatus,
+    OpenWorkflowDashboard,
     StartWorkflow,
     StopWorkflow,
     _status_result,
@@ -108,6 +109,7 @@ def test_control_tools_are_hidden_inside_orchestrated_workers(
 
     assert StartWorkflow.is_available() is False
     assert GetWorkflowStatus.is_available() is False
+    assert OpenWorkflowDashboard.is_available() is False
     assert StopWorkflow.is_available() is False
 
 
@@ -117,6 +119,7 @@ def test_control_tools_are_built_in_without_project_configuration() -> None:
     assert {
         "start_workflow",
         "get_workflow_status",
+        "open_workflow_dashboard",
         "stop_workflow",
     } <= manager.available_tools.keys()
 

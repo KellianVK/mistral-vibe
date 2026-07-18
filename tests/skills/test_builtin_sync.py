@@ -22,9 +22,12 @@ class TestBuiltinSkills:
         assert skill.allowed_tools == [
             "start_workflow",
             "get_workflow_status",
+            "open_workflow_dashboard",
             "stop_workflow",
         ]
         assert "/workflow status" in skill.prompt
+        assert "/workflow dashboard" in skill.prompt
+        assert "controller state as authoritative" in skill.prompt
 
     def test_vibe_skill_has_no_path(self) -> None:
         assert BUILTIN_SKILLS["vibe"].skill_path is None

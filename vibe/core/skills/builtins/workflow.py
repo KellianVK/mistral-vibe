@@ -4,10 +4,19 @@ from vibe.core.skills.models import SkillInfo
 
 _PROMPT = """# Workflow control
 
+Supported forms include `/workflow <goal>`, `/workflow status`,
+`/workflow dashboard`, and `/workflow stop`.
+
 Interpret the text after `/workflow` as follows:
 
 - If it is `status`, call `get_workflow_status` exactly once and summarize the
-  controller state plus each agent's state and current task.
+  controller state plus each agent's state and current task. Treat the
+  controller state as authoritative: when it is `running`, say the workflow is
+  still running even if an individual agent is blocked. Mention that agent as
+  a partial failure without calling the whole workflow blocked.
+- If it is `dashboard`, call `open_workflow_dashboard` exactly once. Report
+  whether the browser opened and include the returned localhost URL so it can
+  be opened manually when necessary.
 - If it is `stop` or `cancel`, call `stop_workflow` exactly once and report
   whether a running workflow was stopped.
 - Otherwise, treat the complete text as the software-delivery goal and call
@@ -26,7 +35,12 @@ SKILL = SkillInfo(
     description=(
         "Start, inspect, or stop the built-in Planner, Backend, and QA workflow."
     ),
-    allowed_tools=["start_workflow", "get_workflow_status", "stop_workflow"],
+    allowed_tools=[
+        "start_workflow",
+        "get_workflow_status",
+        "open_workflow_dashboard",
+        "stop_workflow",
+    ],
     user_invocable=True,
     prompt=_PROMPT,
 )

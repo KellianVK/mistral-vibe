@@ -25,6 +25,7 @@ datas += [("vibe/core/tools/builtins/*.py", "vibe/core/tools/builtins")]
 datas += collect_data_files(
     "vibe.core.skills.builtins", includes=["*.py"], include_py_files=True
 )
+datas += collect_data_files("workflow_control", includes=["static/**"])
 
 a = Analysis(
     ["vibe/cli/entrypoint.py"],
