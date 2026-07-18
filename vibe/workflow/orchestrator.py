@@ -34,6 +34,7 @@ from vibe.workflow.store import (
     read_claims,
     read_decisions,
     read_status,
+    read_status_snapshot,
     record_change,
     record_event,
     start_run,
@@ -529,6 +530,39 @@ async def run_worker(
     return result
 
 
+def _waiting_task(role: RoleSpec) -> str:
+    if not role.depends_on:
+        return "Waiting to start"
+    return f"Waiting for {', '.join(role.depends_on)}"
+
+
+async def _initialize_role_statuses(database_path: Path, roles: list[RoleSpec]) -> None:
+    """Show the whole team on the board immediately, queued roles included."""
+    await asyncio.gather(
+        *(
+            _set_status(database_path, role.name, "idle", _waiting_task(role))
+            for role in roles
+        )
+    )
+
+
+async def _block_unstarted_roles(database_path: Path, roles: list[RoleSpec]) -> None:
+    statuses = await asyncio.to_thread(read_status_snapshot, database_path)
+    idle_roles = {status["role"] for status in statuses if status["state"] == "idle"}
+    await asyncio.gather(
+        *(
+            _set_status(
+                database_path,
+                role.name,
+                "blocked",
+                "Orchestrator cancelled before starting",
+            )
+            for role in roles
+            if role.name in idle_roles
+        )
+    )
+
+
 async def _latest_qa_verdict(database_path: Path) -> str | None:
     decisions = await asyncio.to_thread(
         read_decisions, database_path, "QA", None, "qa-verdict"
@@ -660,6 +694,7 @@ async def run_workflow(
     try:
         await asyncio.to_thread(initialize_database, database_path)
         await asyncio.to_thread(start_run, database_path, goal)
+        await _initialize_role_statuses(database_path, roles)
     except (OSError, sqlite3.Error, RuntimeError) as error:
         raise WorkflowRunError(
             f"Cannot initialize workflow database: {error}"
@@ -671,26 +706,30 @@ async def run_workflow(
     )
 
     results: list[WorkerResult] = []
-    for wave in waves:
-        results += await _run_wave(
-            wave,
+    try:
+        for wave in waves:
+            results += await _run_wave(
+                wave,
+                goal,
+                brief,
+                resolved_workdir,
+                database_path,
+                deadline,
+                child_environment,
+            )
+        results += await _quality_loop(
+            roles,
             goal,
             brief,
             resolved_workdir,
             database_path,
             deadline,
             child_environment,
+            max_loop_iterations,
         )
-    results += await _quality_loop(
-        roles,
-        goal,
-        brief,
-        resolved_workdir,
-        database_path,
-        deadline,
-        child_environment,
-        max_loop_iterations,
-    )
+    except asyncio.CancelledError:
+        await _block_unstarted_roles(database_path, roles)
+        raise
     return results
 
 

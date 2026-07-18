@@ -24,6 +24,9 @@ uv run vibe workflow run \
 ```
 
 Ouvrir <http://127.0.0.1:8787> immédiatement. À observer :
+- **toute l'équipe apparaît dès la première seconde** : les rôles en file
+  d'attente sont `idle` avec « Waiting for Planner » etc. (fix
+  `fix_agent_number_interface`), puis passent `working` vague par vague ;
 - Planner `working` (pulsation) → `done`, décision `plan` dans le feed ;
 - Backend ∥ Frontend en parallèle (vague 2), broadcasts dans Messages ;
 - éventuellement le money shot : Frontend `blocked — waiting on Backend`
@@ -52,6 +55,9 @@ uv run vibe workflow run \
   --goal "In calculator.py, add a multiply(a, b) function. QA: write tests for BOTH add and multiply based on what their names promise mathematically (add(2,3)==5), run them, and fail the verdict if any function is wrong. Backend: fix any failure QA reports." \
   --roles Planner,Backend,QA --workdir $D
 ```
+
+Un Ctrl-C en cours de run marque proprement les rôles jamais démarrés en
+`blocked — Orchestrator cancelled before starting` (visible sur le board).
 
 À observer sur le board : verdict `FAIL:` de QA dans le feed → broadcast
 `Orchestrator: QA failed — retry 1/3` dans Messages → Backend repasse

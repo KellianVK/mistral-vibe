@@ -14,6 +14,7 @@ from vibe.workflow.store import (
     initialize_database,
     publish_decision,
     read_status,
+    read_status_snapshot,
     update_status,
 )
 
@@ -459,8 +460,14 @@ async def test_run_workflow_runs_waves_in_order_with_parallel_second_wave(
     from vibe.workflow.setup import workflow_database_path
     from vibe.workflow.store import current_run
 
-    run = current_run(workflow_database_path(workdir))
+    database_path = workflow_database_path(workdir)
+    run = current_run(database_path)
     assert run is not None and run["goal"] == "Build a Todo API"
+    # Queued-agent visibility: every role got an initial idle status.
+    statuses = {s["role"]: s for s in read_status_snapshot(database_path)}
+    assert statuses["Planner"]["state"] == "idle"
+    assert statuses["Backend"]["state"] == "idle"
+    assert statuses["Frontend"]["state"] == "idle"
 
 
 def test_record_file_changes_attributes_via_claims(tmp_path: Path) -> None:
@@ -627,3 +634,40 @@ def test_dedicated_prompts_exist_for_all_default_roles(tmp_path: Path) -> None:
         assert prompt_file.is_file(), f"missing dedicated prompt for {role.name}"
         prompt = orchestrator.build_worker_prompt(role, "goal", "", db)
         assert "{{OBJECTIVE}}" not in prompt and "{{ROLE}}" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_block_unstarted_roles_marks_only_queued_roles_blocked(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "workflow.db"
+    initialize_database(database_path)
+    roles = select_roles(["Planner", "Backend", "Reviewer"])
+
+    await orchestrator._initialize_role_statuses(database_path, roles)
+    update_status(database_path, "Planner", "done", "Completed")
+    update_status(database_path, "Backend", "working", "Implementing")
+
+    await orchestrator._block_unstarted_roles(database_path, roles)
+
+    statuses = {s["role"]: s for s in read_status_snapshot(database_path)}
+    assert statuses["Planner"]["state"] == "done"
+    assert statuses["Backend"]["state"] == "working"
+    assert statuses["Reviewer"]["state"] == "blocked"
+    assert statuses["Reviewer"]["current_task"] == (
+        "Orchestrator cancelled before starting"
+    )
+
+
+@pytest.mark.asyncio
+async def test_initial_statuses_show_waiting_dependencies(tmp_path: Path) -> None:
+    database_path = tmp_path / "workflow.db"
+    initialize_database(database_path)
+    roles = select_roles(["Planner", "Backend", "QA"])
+
+    await orchestrator._initialize_role_statuses(database_path, roles)
+
+    statuses = {s["role"]: s for s in read_status_snapshot(database_path)}
+    assert statuses["Planner"]["current_task"] == "Waiting to start"
+    assert statuses["Backend"]["current_task"] == "Waiting for Planner"
+    assert statuses["QA"]["current_task"] == "Waiting for Planner, Backend"
