@@ -1,3 +1,98 @@
+# MiaouFlow 🐱
+
+```
+    ██  ██
+  ██████████
+  ██ ██ ██ ██
+████████████████
+  ██████████
+  ██  ██  ██
+```
+
+**Multi-agent orchestration built natively into Mistral Vibe.** One command
+spawns a full team of Vibe agents — Planner, Backend, Frontend, QA, Security,
+DevOps, Docs, Reviewer — that coordinate in real time through a shared
+blackboard: published contracts, questions, live messaging, file claims. A
+live React Flow board shows the team thinking: status waves, the decision
+feed, per-agent latency, clickable diffs of the code being written.
+
+> 🏆 Built in one day at the **Mistral Vibe Hackathon** (Paris, July 18 2026)
+> — **top-6 finalist**, pitched on stage.
+
+```sh
+uv tool install git+https://github.com/KellianVK/mistral-vibe.git@main
+vibe workflow init        # questions -> team of 6-8 -> run + live board
+# or inside any interactive session:  /workflow <your goal>
+```
+
+The board lives at <http://127.0.0.1:8787>. Guides: [TESTING.md](TESTING.md)
+(hands-on scenarios), [DEMO.md](DEMO.md) (the 5-minute demo),
+[AMELIORATIONS.md](AMELIORATIONS.md) (honest limits & roadmap).
+
+**Why it's different** — parallel agents are a solved problem; *coordinating*
+agents are not. MiaouFlow agents negotiate interfaces before implementing
+them (Frontend blocks on Backend's published `auth-contract`, then unblocks),
+a QA `FAIL:` verdict triggers a bounded retry loop then a Reviewer re-judge,
+and `git push` is hard-gated by a native hook until the Reviewer publishes
+`GO:`. Everything is native Vibe: a subcommand, 11+3 builtin tools, agent
+profiles with per-role tool restrictions, hooks, a builtin skill — no
+external daemon, zero new dependencies.
+
+## Commands & architecture
+
+```sh
+# one command: compose a 6-8 agent team (Planner, Reviewer, Backend, QA,
+# Security, Docs + Frontend/DevOps when relevant), then run + open the board.
+# Empty dir -> a few questions; existing project -> scan + confirmation.
+vibe workflow init
+
+# or run an explicit team on a goal (Planner first, then Backend ∥ Frontend)
+vibe workflow run --goal "Build a small Todo API with JWT auth" --workdir demo-project
+
+# live board (React Flow): agent graph, decision feed, live messages, file
+# claims, per-agent timings — plus Logs, Changes, Add-agent, and System tabs
+open http://127.0.0.1:8787
+
+# extras
+vibe workflow run --roles Planner,Backend,Frontend,QA --goal "..."   # pick the team
+vibe workflow init --no-auto-run                                     # provision only
+vibe workflow board --workdir demo-project                           # board only
+vibe workflow status --workdir demo-project                          # terminal snapshot
+```
+
+How it works:
+
+- **Blackboard** — a SQLite (WAL) database per workdir. Agents get 11 native tools:
+  decisions (`publish_decision`, `read_decisions`), questions (`request_review`,
+  `answer_question`, `read_questions`), status (`update_status`), soft file locks
+  (`claim_file`, `release_file`), and **live messaging** (`send_message`,
+  `broadcast`, `read_inbox`) — agents run in parallel and read their inbox
+  mid-turn, so messages land while the recipient is working, not on its next
+  spawn. Tools are visible only to workflow sessions (`VIBE_WORKFLOW_DB`); each
+  agent's identity is pinned by the orchestrator via `VIBE_WORKFLOW_ROLE`, so
+  roles cannot impersonate each other.
+- **Orchestrator** — spawns headless `vibe` workers per role in dependency waves
+  (parallel within a wave), each with a pinned model via a generated agent profile.
+  Every prompt gets a shared **warm-start brief** (goal, role map, project file map,
+  decisions digest) so agents skip redundant discovery and respond faster.
+- **Live board** — served by the CLI itself (Starlette + WebSocket, zero new deps,
+  prebuilt UI shipped in the wheel). Shows the money shot live: Frontend flips to
+  *blocked — waiting on Backend*, Backend publishes the `auth-contract` decision,
+  Frontend unblocks and codes against the real contract. Per-agent time-to-first-action,
+  turn counts, and wall-clock render on each node.
+- **Repeatable runs** — each `run` resets the board (decisions/status/questions/claims/
+  timings) while keeping run history, so back-to-back demos start clean.
+
+Rehearse the golden path end-to-end (two consecutive real runs):
+
+```sh
+scripts/rehearse_demo.sh
+```
+
+---
+
+*MiaouFlow is built on top of the official Mistral Vibe CLI — full upstream documentation below.*
+
 # Mistral Vibe
 
 [![PyPI Version](https://img.shields.io/pypi/v/mistral-vibe)](https://pypi.org/project/mistral-vibe)
@@ -21,8 +116,6 @@
 
 Mistral Vibe is a command-line coding assistant powered by Mistral's models. It provides a conversational interface to your codebase, allowing you to use natural language to explore, modify, and interact with your projects through a powerful set of tools.
 
-> [!NOTE]
-> **This fork adds MiaouFlow (`vibe workflow`)** — a native multi-agent orchestration layer. One command spawns a team of Vibe agents (Planner, Backend, Frontend, and optionally QA) that coordinate through a shared blackboard — publishing decisions, asking each other questions, and soft-locking files — with a live React Flow web board showing status, the decision feed, and per-agent response-time metrics. See [MiaouFlow](#miaouflow-vibe-workflow) below.
 
 > [!WARNING]
 > Mistral Vibe works on Windows, but we officially support and target UNIX environments.
@@ -850,56 +943,3 @@ Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the [LICENSE](LICENSE) file for the full license text.
-
-## MiaouFlow (`vibe workflow`)
-
-MiaouFlow turns Vibe from an agent into a team. Built natively into this fork — no external tools.
-
-```sh
-# one command: compose a 6-8 agent team (Planner, Reviewer, Backend, QA,
-# Security, Docs + Frontend/DevOps when relevant), then run + open the board.
-# Empty dir -> a few questions; existing project -> scan + confirmation.
-vibe workflow init
-
-# or run an explicit team on a goal (Planner first, then Backend ∥ Frontend)
-vibe workflow run --goal "Build a small Todo API with JWT auth" --workdir demo-project
-
-# live board (React Flow): agent graph, decision feed, live messages, file
-# claims, per-agent timings — plus Logs, Changes, Add-agent, and System tabs
-open http://127.0.0.1:8787
-
-# extras
-vibe workflow run --roles Planner,Backend,Frontend,QA --goal "..."   # pick the team
-vibe workflow init --no-auto-run                                     # provision only
-vibe workflow board --workdir demo-project                           # board only
-vibe workflow status --workdir demo-project                          # terminal snapshot
-```
-
-How it works:
-
-- **Blackboard** — a SQLite (WAL) database per workdir. Agents get 11 native tools:
-  decisions (`publish_decision`, `read_decisions`), questions (`request_review`,
-  `answer_question`, `read_questions`), status (`update_status`), soft file locks
-  (`claim_file`, `release_file`), and **live messaging** (`send_message`,
-  `broadcast`, `read_inbox`) — agents run in parallel and read their inbox
-  mid-turn, so messages land while the recipient is working, not on its next
-  spawn. Tools are visible only to workflow sessions (`VIBE_WORKFLOW_DB`); each
-  agent's identity is pinned by the orchestrator via `VIBE_WORKFLOW_ROLE`, so
-  roles cannot impersonate each other.
-- **Orchestrator** — spawns headless `vibe` workers per role in dependency waves
-  (parallel within a wave), each with a pinned model via a generated agent profile.
-  Every prompt gets a shared **warm-start brief** (goal, role map, project file map,
-  decisions digest) so agents skip redundant discovery and respond faster.
-- **Live board** — served by the CLI itself (Starlette + WebSocket, zero new deps,
-  prebuilt UI shipped in the wheel). Shows the money shot live: Frontend flips to
-  *blocked — waiting on Backend*, Backend publishes the `auth-contract` decision,
-  Frontend unblocks and codes against the real contract. Per-agent time-to-first-action,
-  turn counts, and wall-clock render on each node.
-- **Repeatable runs** — each `run` resets the board (decisions/status/questions/claims/
-  timings) while keeping run history, so back-to-back demos start clean.
-
-Rehearse the golden path end-to-end (two consecutive real runs):
-
-```sh
-scripts/rehearse_demo.sh
-```
